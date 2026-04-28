@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Club Invite — TennisTrack</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card" style="max-width:440px;">
+    <div class="auth-logo">
+      <div class="logo-circle">🏢</div>
+      <h1>TennisTrack</h1>
+      <p>Club invitation</p>
+    </div>
+
+    <% if(error){ %>
+    <div class="alert alert-error"><%= error %></div>
+    <p style="text-align:center;margin-top:16px;">
+      <a href="/clubs" class="btn btn-primary btn-sm">View my clubs</a>
+    </p>
+
+    <% } else if(success){ %>
+    <div class="alert alert-success"><%= success %></div>
+    <p style="text-align:center;margin-top:16px;">
+      <a href="/clubs/<%= invite.club_id %>" class="btn btn-primary">Open club →</a>
+    </p>
+
+    <% } else if(invite){ %>
+    <div style="text-align:center;margin:8px 0 20px;">
+      <div style="font-size:28px;font-weight:800;color:var(--gray-800);margin-bottom:4px;"><%= invite.club_name %></div>
+      <div style="font-size:14px;color:var(--gray-500);">
+        <strong>@<%= invite.inviter %></strong> has invited you to join this club
+      </div>
+      <div style="margin-top:12px;">
+        <%
+          const PLAN_LABELS = {free:'Free',pro:'Pro',premium:'Premium'};
+          const PLAN_COLORS = {free:'#6b7280',pro:'#1d4ed8',premium:'#7c3aed'};
+          const PLAN_BG    = {free:'#f3f4f6',pro:'#dbeafe',premium:'#ede9fe'};
+          const planKey = invite.plan||'free';
+        %>
+        <span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:<%= PLAN_BG[planKey] %>;color:<%= PLAN_COLORS[planKey] %>;"><%= PLAN_LABELS[planKey] %> Plan</span>
+      </div>
+    </div>
+
+    <form method="POST" action="/invite/<%= invite.token %>">
+      <button type="submit" class="btn btn-primary btn-full" style="font-size:15px;padding:12px;">Join <%= invite.club_name %></button>
+    </form>
+    <p style="text-align:center;margin-top:12px;font-size:13px;color:var(--gray-400);">You're signing in as <strong>@<%= user.username %></strong></p>
+
+    <% } %>
+
+    <p style="text-align:center;margin-top:20px;font-size:13px;color:var(--gray-400);">
+      <a href="/dashboard" style="color:var(--green-600);">Go to dashboard</a>
+    </p>
+  </div>
+</div>
+</body>
+</html>

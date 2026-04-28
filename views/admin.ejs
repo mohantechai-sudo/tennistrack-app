@@ -1,0 +1,147 @@
+<%
+function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtDT(d){return new Date(d).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function outcome(m,uid){if(!m.winner_id)return'nr';return m.winner_id===uid?'win':'loss';}
+function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+%>
+<%- include('layout_top',{title:'Admin Panel',page:'admin',user}) %>
+
+<div style="margin-bottom:24px;">
+  <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);">
+    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value green"><%= users.length %></div></div>
+    <div class="stat-card"><div class="stat-label">Total Matches</div><div class="stat-value"><%= matches.length %></div></div>
+    <div class="stat-card"><div class="stat-label">Scheduled</div><div class="stat-value"><%= scheduled.filter(s=>s.status==='scheduled').length %></div></div>
+  </div>
+</div>
+
+<!-- Users -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-title" style="margin-bottom:14px;">👥 All Players</div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--gray-200);">
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Player</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Email</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Phone</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Joined</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Role</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% users.forEach(u=>{ %>
+        <tr style="border-bottom:1px solid var(--gray-100);">
+          <td style="padding:10px 12px;">
+            <div style="font-weight:600;color:var(--gray-800);">@<%= u.username %></div>
+            <div style="font-size:12px;color:var(--gray-500);"><%= u.full_name %></div>
+          </td>
+          <td style="padding:10px 12px;color:var(--gray-600);"><%= u.email %></td>
+          <td style="padding:10px 12px;color:var(--gray-600);"><%= u.phone||'—' %></td>
+          <td style="padding:10px 12px;color:var(--gray-500);"><%= fmtDate(u.created_at) %></td>
+          <td style="padding:10px 12px;">
+            <% if(u.is_admin){ %>
+            <span style="background:var(--green-100);color:var(--green-800);font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;">ADMIN</span>
+            <% } else { %>
+            <span style="background:var(--gray-100);color:var(--gray-500);font-size:11px;padding:2px 8px;border-radius:999px;">Player</span>
+            <% } %>
+          </td>
+          <td style="padding:10px 12px;">
+            <div style="display:flex;gap:6px;">
+              <% if(u.id!==uid){ %>
+              <form method="POST" action="/admin/users/<%= u.id %>/toggle-admin">
+                <button type="submit" class="btn btn-outline btn-sm"><%= u.is_admin?'Remove Admin':'Make Admin' %></button>
+              </form>
+              <form method="POST" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Delete user @<%= u.username %>? This cannot be undone.')">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+              <% } else { %>
+              <span style="font-size:12px;color:var(--gray-400);">You</span>
+              <% } %>
+            </div>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Matches — admin can delete -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-title" style="margin-bottom:14px;">🏆 All Matches <span style="font-size:12px;color:var(--gray-400);font-weight:400;">(admin can delete)</span></div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--gray-200);">
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Players</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Score</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Surface</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Date</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% matches.forEach(m=>{ %>
+        <tr style="border-bottom:1px solid var(--gray-100);">
+          <td style="padding:10px 12px;">
+            <span style="font-weight:500;">@<%= m.p1name %></span>
+            <span style="color:var(--gray-400);margin:0 6px;">vs</span>
+            <span style="font-weight:500;">@<%= m.p2name %></span>
+            <% if(m.winnername){ %><span style="font-size:11px;color:var(--green-700);margin-left:6px;">🏆 <%= m.winnername %></span><% } %>
+          </td>
+          <td style="padding:10px 12px;font-family:monospace;font-weight:600;"><%= m.score %></td>
+          <td style="padding:10px 12px;"><span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span></td>
+          <td style="padding:10px 12px;color:var(--gray-500);"><%= fmtDate(m.played_at) %></td>
+          <td style="padding:10px 12px;">
+            <form method="POST" action="/matches/<%= m.id %>/delete" onsubmit="return confirm('Delete this match? Cannot be undone.')">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Scheduled matches -->
+<div class="card">
+  <div class="card-title" style="margin-bottom:14px;">📅 Scheduled Matches</div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--gray-200);">
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Players</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Date & Time</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Venue</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Status</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% scheduled.forEach(m=>{ %>
+        <tr style="border-bottom:1px solid var(--gray-100);">
+          <td style="padding:10px 12px;font-weight:500;">@<%= m.p1name %> vs @<%= m.p2name %></td>
+          <td style="padding:10px 12px;color:var(--gray-700);"><%= fmtDT(m.scheduled_at) %></td>
+          <td style="padding:10px 12px;color:var(--gray-500);"><%= m.venue||'—' %></td>
+          <td style="padding:10px 12px;">
+            <span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:500;background:<%= m.status==='scheduled'?'var(--green-100)':m.status==='cancelled'?'#fee2e2':'var(--gray-100)' %>;color:<%= m.status==='scheduled'?'var(--green-800)':m.status==='cancelled'?'#991b1b':'var(--gray-600)' %>;">
+              <%= m.status %>
+            </span>
+          </td>
+          <td style="padding:10px 12px;">
+            <% if(m.status==='scheduled'){ %>
+            <form method="POST" action="/admin/schedule/<%= m.id %>/cancel" onsubmit="return confirm('Cancel this match?')">
+              <button type="submit" class="btn btn-danger btn-sm">Cancel</button>
+            </form>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('layout_bottom') %>

@@ -1,0 +1,168 @@
+<%
+  function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+  function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+  const winRateColor = winRate>=60?'var(--green-600)':winRate>=40?'#d97706':'#dc2626';
+  const rankSuffix = r => r===1?'st':r===2?'nd':r===3?'rd':'th';
+  const surfaceOrder = ['hard','clay','grass','indoor'];
+  const surfaceEntries = surfaceOrder.filter(s=>surfaceStats[s]).map(s=>({surface:s,...surfaceStats[s]}))
+    .concat(Object.entries(surfaceStats).filter(([s])=>!surfaceOrder.includes(s)).map(([s,v])=>({surface:s,...v})));
+%>
+<%- include('layout_top',{title:player.full_name||player.username,page:'leagues',user}) %>
+
+<!-- Breadcrumb -->
+<div style="margin-bottom:16px;font-size:13px;color:var(--gray-500);">
+  <a href="/leagues" style="color:var(--gray-500);text-decoration:none;">Leagues</a>
+  <span style="margin:0 6px;">›</span>
+  <a href="/leagues/<%= league.id %>" style="color:var(--gray-500);text-decoration:none;"><%= league.name %></a>
+  <span style="margin:0 6px;">›</span>
+  <span style="color:var(--gray-700);font-weight:600;"><%= player.full_name||player.username %></span>
+</div>
+
+<!-- Player Header -->
+<div class="card" style="margin-bottom:20px;border-top:3px solid <%= plan.color %>;">
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div style="width:64px;height:64px;border-radius:50%;background:<%= player.id===uid?'var(--green-100)':'var(--gray-100)' %>;color:<%= player.id===uid?'var(--green-700)':'var(--gray-600)' %>;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;flex-shrink:0;">
+      <%= (player.full_name||player.username)[0].toUpperCase() %>
+    </div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <h2 style="margin:0;font-size:20px;font-weight:700;color:var(--gray-800);"><%= player.full_name||player.username %></h2>
+        <span style="font-size:12px;color:var(--gray-500);">@<%= player.username %></span>
+        <% if(player.id===uid){ %><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--green-100);color:var(--green-700);">You</span><% } %>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+        <% if(rank>0){ %>
+        <span style="font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;background:<%= rank===1?'#fef9c3':rank<=3?'var(--gray-100)':'var(--gray-50)' %>;color:<%= rank===1?'#92400e':'var(--gray-600)' %>;">
+          <%= rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'#'+rank %> <%= rank %><%= rankSuffix(rank) %> place
+        </span>
+        <% } %>
+        <span style="font-size:13px;color:var(--gray-500);"><%= league.name %></span>
+      </div>
+    </div>
+    <a href="/leagues/<%= league.id %>" class="btn btn-outline btn-sm">← Back to League</a>
+  </div>
+
+  <!-- Stats Summary -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px;border-top:1px solid var(--gray-100);padding-top:16px;" class="player-stats-grid">
+    <div style="text-align:center;">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Played</div>
+      <div style="font-size:28px;font-weight:800;color:var(--gray-800);"><%= played %></div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Wins</div>
+      <div style="font-size:28px;font-weight:800;color:var(--green-600);"><%= wins %></div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Losses</div>
+      <div style="font-size:28px;font-weight:800;color:#dc2626;"><%= losses %></div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Points</div>
+      <div style="font-size:28px;font-weight:800;color:<%= plan.color %>;"><%= points %></div>
+    </div>
+  </div>
+
+  <!-- Win rate bar -->
+  <% if(played>0){ %>
+  <div style="margin-top:14px;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gray-500);margin-bottom:6px;">
+      <span style="font-weight:600;color:<%= winRateColor %>;">Win rate: <%= winRate %>%</span>
+      <span><%= wins %> W · <%= losses %> L<% const nr=played-wins-losses; if(nr>0){ %> · <%= nr %> NR<% } %></span>
+    </div>
+    <div style="height:8px;border-radius:999px;background:var(--gray-100);overflow:hidden;display:flex;">
+      <% if(wins>0){ %><div style="width:<%= winRate %>%;background:var(--green-500);border-radius:999px 0 0 999px;transition:width .5s;"></div><% } %>
+      <% if(losses>0){ %><div style="width:<%= Math.round(losses/played*100) %>%;background:#fca5a5;border-radius:0 999px 999px 0;"></div><% } %>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;" class="sas-grid">
+
+  <!-- Surface Breakdown -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">🎾 By Surface</div></div>
+    <% if(surfaceEntries.length===0){ %>
+    <div class="empty-state" style="padding:24px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches yet</div></div>
+    <% } else { %>
+    <div style="display:flex;flex-direction:column;gap:12px;padding-top:4px;">
+      <% surfaceEntries.forEach(e=>{ const pct=e.total>0?Math.round(e.wins/e.total*100):0; %>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span class="match-surface <%= surfaceClass(e.surface) %>" style="font-size:12px;"><%= e.surface %></span>
+          <span style="font-size:13px;color:var(--gray-600);"><span style="color:var(--green-600);font-weight:600;"><%= e.wins %></span>–<span style="color:#dc2626;"><%= e.losses %></span> · <strong><%= pct %>%</strong></span>
+        </div>
+        <div class="winbar"><div class="winbar-fill" style="width:<%= pct %>%"></div></div>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+
+  <!-- Head-to-Head vs League Members -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">⚔️ Head-to-Head</div></div>
+    <% if(h2h.length===0){ %>
+    <div class="empty-state" style="padding:24px;"><div class="empty-icon">⚔️</div><div class="empty-text">No matches vs other members</div></div>
+    <% } else { %>
+    <div style="display:flex;flex-direction:column;gap:10px;padding-top:4px;">
+      <% h2h.forEach(o=>{ const pct=o.total>0?Math.round(o.wins/o.total*100):50; %>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <a href="/leagues/<%= league.id %>/player/<%= o.id %>" style="font-size:14px;font-weight:500;color:var(--gray-800);text-decoration:none;">@<%= o.username %></a>
+          <span style="font-size:13px;color:var(--gray-600);"><span style="color:var(--green-600);font-weight:600;"><%= o.wins %></span>–<span style="color:#dc2626;"><%= o.losses %></span> (<%= pct %>%)</span>
+        </div>
+        <div class="winbar"><div class="winbar-fill" style="width:<%= pct %>%"></div></div>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<!-- Match History -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">📋 Match History in <%= league.name %></div>
+    <span style="font-size:13px;color:var(--gray-500);"><%= played %> matches</span>
+  </div>
+  <% if(playerMatches.length===0){ %>
+  <div class="empty-state" style="padding:32px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches logged yet</div></div>
+  <% } else { %>
+  <div class="match-list">
+    <% playerMatches.forEach(m=>{ %>
+    <%
+      const isD = m.match_type==='doubles';
+      const onT1 = m.player1_id===pid || m.player1_partner_id===pid;
+      const t1won = m.winner_id && (m.winner_id===m.player1_id || m.winner_id===m.player1_partner_id);
+      const t2won = m.winner_id && (m.winner_id===m.player2_id || m.winner_id===m.player2_partner_id);
+      const pidWon = m.winner_id && ((onT1&&t1won)||(!onT1&&t2won));
+      const pidLost = m.winner_id && !pidWon;
+      const oc = pidWon?'win':pidLost?'loss':'nr';
+      const t1label = isD&&m.p1partnername ? `${m.p1name} & ${m.p1partnername}` : m.p1name;
+      const t2label = isD&&m.p2partnername ? `${m.p2name} & ${m.p2partnername}` : m.p2name;
+      const winnerLabel = t1won ? t1label : t2won ? t2label : null;
+    %>
+    <div class="match-row">
+      <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
+      <div class="match-vs" style="flex:1;min-width:0;">
+        <div class="vs-text" style="font-size:13px;"><strong><%= t1label %></strong> vs <strong><%= t2label %></strong></div>
+        <div class="vs-sub"><%= fmtDate(m.played_at) %><% if(winnerLabel){ %> · 🏆 <%= winnerLabel %><% } %></div>
+      </div>
+      <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+      <span style="font-size:11px;font-weight:500;padding:2px 7px;border-radius:999px;background:<%= isD?'#ede9fe':'#dcfce7' %>;color:<%= isD?'#7c3aed':'#166534' %>;"><%= isD?'doubles':'singles' %></span>
+      <div class="match-score"><%= m.score %></div>
+    </div>
+    <% }) %>
+  </div>
+  <% } %>
+</div>
+
+<% const pid = player.id; %>
+<style>
+  @media(max-width:640px){
+    .sas-grid{grid-template-columns:1fr!important;}
+    .player-stats-grid{grid-template-columns:repeat(2,1fr)!important;}
+  }
+</style>
+<%- include('layout_bottom') %>

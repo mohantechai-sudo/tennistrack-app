@@ -1,0 +1,80 @@
+<%- include('layout_top',{title:'Clubs',page:'clubs',user}) %>
+
+<% if(error){ %><div class="alert alert-error" style="margin-bottom:16px;"><%= error %></div><% } %>
+<% if(success){ %><div class="alert alert-success" style="margin-bottom:16px;"><%= success %></div><% } %>
+
+<!-- Create Club -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div><div class="card-title">Create a Club</div><div class="card-sub">Organise players under one roof — leagues, matches & stats all in one place</div></div>
+  </div>
+  <form method="POST" action="/clubs">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="create-club-grid">
+      <div class="form-group">
+        <label class="form-label">Club name *</label>
+        <input class="form-input" name="name" type="text" placeholder="e.g. Riverside Tennis Club" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description <span style="color:var(--gray-400);font-weight:400;">(optional)</span></label>
+        <input class="form-input" name="description" type="text" placeholder="What is this club about?"/>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="margin-top:8px;">🏢 Create Club</button>
+  </form>
+</div>
+
+<!-- Plan overview strip -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;" class="plan-strip">
+  <% Object.entries(PLANS).forEach(([key,p])=>{ %>
+  <div style="border:1px solid <%= p.color %>22;border-radius:var(--radius);padding:14px 16px;background:<%=p.bg%>44;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-weight:700;color:<%=p.color%>;font-size:14px;"><%= p.label %></span>
+      <span style="font-weight:700;font-size:15px;color:var(--gray-800);">$<%= p.price %><span style="font-weight:400;font-size:11px;color:var(--gray-400);">/mo</span></span>
+    </div>
+    <ul style="margin:0;padding:0 0 0 14px;font-size:12px;color:var(--gray-600);line-height:1.8;">
+      <% p.features.forEach(f=>{ %><li><%= f %></li><% }) %>
+    </ul>
+  </div>
+  <% }) %>
+</div>
+
+<!-- My Clubs -->
+<% const myClubs    = clubs.filter(c=>c.my_role); %>
+<% const otherClubs = clubs.filter(c=>!c.my_role); %>
+
+<% if(myClubs.length > 0){ %>
+<div style="font-size:12px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">My Clubs</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:24px;">
+  <% myClubs.forEach(c=>{ const plan=PLANS[c.plan]||PLANS.free; %>
+  <div class="card" style="border-top:3px solid <%=plan.color%>;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div>
+        <div style="font-size:15px;font-weight:600;color:var(--gray-800);"><%= c.name %></div>
+        <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">@<%= c.owner_name %></div>
+      </div>
+      <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:<%=plan.bg%>;color:<%=plan.color%>;"><%=plan.label%></span>
+    </div>
+    <% if(c.description){ %><div style="font-size:13px;color:var(--gray-500);margin-bottom:10px;"><%= c.description %></div><% } %>
+    <div style="display:flex;gap:12px;font-size:12px;color:var(--gray-400);margin-bottom:14px;">
+      <span>👥 <%= c.member_count %> / <%= plan.memberLimit===9999?'∞':plan.memberLimit %> members</span>
+      <span style="text-transform:capitalize;">🎖️ <%= c.my_role %></span>
+    </div>
+    <a href="/clubs/<%= c.id %>" class="btn btn-primary btn-sm">Open</a>
+    <% if(['owner','admin'].includes(c.my_role)){ %>
+    <a href="/clubs/<%= c.id %>/settings" class="btn btn-outline btn-sm" style="margin-left:6px;">Settings</a>
+    <% } %>
+  </div>
+  <% }) %>
+</div>
+<% } else { %>
+<div class="card" style="margin-bottom:20px;"><div class="empty-state" style="padding:36px;">
+  <div class="empty-icon">🏢</div>
+  <div class="empty-text">No clubs yet</div>
+  <div style="font-size:13px;color:var(--gray-400);margin-top:4px;">Create one above or accept an invite to join an existing club</div>
+</div></div>
+<% } %>
+
+<style>
+@media(max-width:640px){.create-club-grid,.plan-strip{grid-template-columns:1fr!important;}}
+</style>
+<%- include('layout_bottom') %>

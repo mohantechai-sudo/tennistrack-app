@@ -1,0 +1,151 @@
+<%
+const CAT_LABEL = {
+  mens_singles:   "Men's Singles",
+  mens_doubles:   "Men's Doubles",
+  womens_singles: "Women's Singles",
+  womens_doubles: "Women's Doubles",
+  mixed_doubles:  "Mixed Doubles",
+  open:           "Open"
+};
+const CAT_ICON = {
+  mens_singles:'👨', mens_doubles:'👬',
+  womens_singles:'👩', womens_doubles:'👭',
+  mixed_doubles:'👫', open:'🎾'
+};
+const CAT_COLOR = {
+  mens_singles:'#1d4ed8', mens_doubles:'#1d4ed8',
+  womens_singles:'#be185d', womens_doubles:'#be185d',
+  mixed_doubles:'#7c3aed', open:'#374151'
+};
+const CAT_BG = {
+  mens_singles:'#dbeafe', mens_doubles:'#dbeafe',
+  womens_singles:'#fce7f3', womens_doubles:'#fce7f3',
+  mixed_doubles:'#ede9fe', open:'#f3f4f6'
+};
+%>
+<%- include('layout_top',{title:'Leagues',page:'leagues',user}) %>
+
+<% if(error){ %><div class="alert alert-error" style="margin-bottom:16px;"><%= error %></div><% } %>
+<% if(success){ %><div class="alert alert-success" style="margin-bottom:16px;"><%= success %></div><% } %>
+
+<!-- Create League -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div><div class="card-title">Create a League</div><div class="card-sub">Set up a new competition for any category</div></div>
+  </div>
+  <form method="POST" action="/leagues">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;" class="create-league-grid">
+      <div class="form-group">
+        <label class="form-label">League name *</label>
+        <input class="form-input" name="name" type="text" placeholder="e.g. Summer Men's Singles 2025" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-input" name="category">
+          <option value="mens_singles">👨 Men's Singles</option>
+          <option value="mens_doubles">👬 Men's Doubles</option>
+          <option value="womens_singles">👩 Women's Singles</option>
+          <option value="womens_doubles">👭 Women's Doubles</option>
+          <option value="mixed_doubles">👫 Mixed Doubles</option>
+          <option value="open">🎾 Open</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Format</label>
+        <select class="form-input" name="format">
+          <option value="round_robin">Round Robin</option>
+          <option value="knockout">Knockout</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label class="form-label">Description <span style="color:var(--gray-400);font-weight:400;">(optional)</span></label>
+      <input class="form-input" name="description" type="text" placeholder="Brief description of the league..."/>
+    </div>
+    <button type="submit" class="btn btn-primary" style="margin-top:8px;">+ Create League</button>
+  </form>
+</div>
+
+<!-- Category filter tabs -->
+<% const cats = ['all','mens_singles','mens_doubles','womens_singles','womens_doubles','mixed_doubles','open']; %>
+<% /* activeCat passed from server */ %>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+  <% cats.forEach(c=>{ const active = activeCat===c; %>
+  <a href="/leagues<%= c==='all'?'':'?cat='+c %>"
+     style="font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid <%= active?'var(--green-500)':'var(--gray-200)' %>;background:<%= active?'var(--green-500)':'#fff' %>;color:<%= active?'#fff':'var(--gray-600)' %>;font-weight:<%= active?'600':'400' %>;text-decoration:none;">
+    <%= c==='all'?'All':CAT_ICON[c]+' '+CAT_LABEL[c] %>
+  </a>
+  <% }) %>
+</div>
+
+<!-- League List -->
+<%
+  const filtered = activeCat==='all' ? leagues : leagues.filter(l=>(l.category||'open')===activeCat);
+%>
+<% if(filtered.length===0){ %>
+<div class="card"><div class="empty-state" style="padding:40px;">
+  <div class="empty-icon">🏅</div>
+  <div class="empty-text">No leagues found</div>
+  <div style="font-size:13px;color:var(--gray-400);margin-top:4px;">Create one above to get started</div>
+</div></div>
+<% } else { %>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
+  <%
+    const LPLAN_COLORS = {free:'#6b7280',pro:'#1d4ed8',premium:'#7c3aed'};
+    const LPLAN_BG     = {free:'#f3f4f6',pro:'#dbeafe',premium:'#ede9fe'};
+    const LPLAN_LABELS = {free:'Free',pro:'Pro',premium:'Premium'};
+    const LPLAN_LIMITS = {free:8,pro:24,premium:9999};
+    const ENROLL_ICON  = {open:'🌐',invite_only:'✉️',closed:'🔒'};
+  %>
+  <% filtered.forEach(l=>{ const cat=l.category||'open'; const lp=l.plan||'free'; const lLimit=LPLAN_LIMITS[lp]; %>
+  <div class="card" style="position:relative;border-top:3px solid <%= LPLAN_COLORS[lp] %>;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><%= l.name %></div>
+        <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">by @<%= l.creator_name %></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-left:8px;flex-shrink:0;">
+        <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:<%= LPLAN_BG[lp] %>;color:<%= LPLAN_COLORS[lp] %>;"><%= LPLAN_LABELS[lp] %></span>
+        <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:<%= l.status==='active'?'var(--green-100)':'var(--gray-100)' %>;color:<%= l.status==='active'?'var(--green-700)':'var(--gray-500)' %>;">
+          <%= l.status==='active'?'Active':'Ended' %>
+        </span>
+      </div>
+    </div>
+
+    <!-- Category badge + enrollment mode -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:<%= CAT_BG[cat] %>;color:<%= CAT_COLOR[cat] %>;">
+        <%= CAT_ICON[cat] %> <%= CAT_LABEL[cat] %>
+      </span>
+      <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--gray-100);color:var(--gray-600);">
+        <%= ENROLL_ICON[l.enrollment||'open'] %> <%= l.enrollment==='invite_only'?'Invite Only':l.enrollment==='closed'?'Closed':'Open' %>
+      </span>
+    </div>
+
+    <% if(l.description){ %><div style="font-size:13px;color:var(--gray-500);margin-bottom:10px;"><%= l.description %></div><% } %>
+    <div style="display:flex;gap:16px;font-size:12px;color:var(--gray-500);margin-bottom:14px;">
+      <span>👥 <%= l.member_count %> / <%= lLimit===9999?'∞':lLimit %></span>
+      <span>🎾 <%= l.match_count %> matches</span>
+      <span>📋 <%= l.format==='round_robin'?'Round Robin':'Knockout' %></span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <a href="/leagues/<%= l.id %>" class="btn btn-primary btn-sm">View</a>
+      <% if(!l.is_member && l.status==='active' && (l.enrollment||'open')==='open'){ %>
+      <form method="POST" action="/leagues/<%= l.id %>/join" style="margin:0;">
+        <button type="submit" class="btn btn-outline btn-sm">Join</button>
+      </form>
+      <% } else if(l.is_member){ %>
+      <span style="font-size:12px;color:var(--green-600);font-weight:500;align-self:center;">✓ Member</span>
+      <% } else if(!l.is_member && l.status==='active'){ %>
+      <span style="font-size:12px;color:var(--gray-400);align-self:center;"><%= ENROLL_ICON[l.enrollment||'open'] %> <%= l.enrollment==='invite_only'?'Invite only':'Closed' %></span>
+      <% } %>
+    </div>
+  </div>
+  <% }) %>
+</div>
+<% } %>
+
+<style>
+@media(max-width:640px){.create-league-grid{grid-template-columns:1fr!important;}}
+</style>
+<%- include('layout_bottom') %>

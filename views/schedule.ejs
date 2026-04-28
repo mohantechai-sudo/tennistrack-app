@@ -1,0 +1,211 @@
+<%
+function fmtDT(d) {
+  return new Date(d).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+const now = new Date();
+function teamLabel(m, uid) {
+  const isD = m.match_type === 'doubles';
+  const onT1 = m.player1_id===uid || m.player1_partner_id===uid;
+  if (!isD) return { opp: onT1 ? m.p2name : m.p1name };
+  const myTeam  = onT1 ? `${m.p1name} & ${m.p1partnername||'?'}` : `${m.p2name} & ${m.p2partnername||'?'}`;
+  const oppTeam = onT1 ? `${m.p2name} & ${m.p2partnername||'?'}` : `${m.p1name} & ${m.p1partnername||'?'}`;
+  return { myTeam, oppTeam, isDoubles: true };
+}
+%>
+<%- include('layout_top',{title:'Schedule',page:'schedule',user}) %>
+
+<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:20px;max-width:960px;" class="sched-grid">
+
+  <!-- Schedule Form -->
+  <div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:16px;">📅 Schedule a Match</div>
+      <% if(error){%><div class="alert alert-error"><%= error %></div><%}%>
+      <% if(success){%><div class="alert alert-success">✅ <%= success %></div><%}%>
+      <form method="POST" action="/schedule/new" id="schedForm">
+
+        <!-- Match type toggle -->
+        <div class="form-group">
+          <label class="form-label">Match type</label>
+          <div style="display:flex;gap:0;border:1px solid var(--gray-200);border-radius:var(--radius-sm);overflow:hidden;width:fit-content;">
+            <label id="tab-singles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:var(--green-600);color:#fff;transition:.15s;">
+              <input type="radio" name="match_type" value="singles" checked style="display:none;" onchange="setType('singles')"> Singles
+            </label>
+            <label id="tab-doubles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:var(--gray-500);transition:.15s;">
+              <input type="radio" name="match_type" value="doubles" style="display:none;" onchange="setType('doubles')"> Doubles
+            </label>
+          </div>
+        </div>
+
+        <!-- Singles: opponent only -->
+        <div id="singles-fields">
+          <div class="form-group">
+            <label class="form-label">Opponent</label>
+            <select class="form-select" name="opponent_id" id="singleOpp">
+              <option value="">Select opponent...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+        </div>
+
+        <!-- Doubles: 3 extra selectors -->
+        <div id="doubles-fields" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Your partner</label>
+            <select class="form-select" name="partner_id" id="partnerSel" disabled>
+              <option value="">Select your partner...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px;">Opponent team</div>
+          <div class="form-group">
+            <label class="form-label">Opponent 1</label>
+            <select class="form-select" name="opponent_id" id="doubleOpp1" disabled>
+              <option value="">Select opponent 1...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opponent 2</label>
+            <select class="form-select" name="opponent_partner_id" id="doubleOpp2" disabled>
+              <option value="">Select opponent 2...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Date & Time</label>
+          <input class="form-input" name="scheduled_at" type="datetime-local" required
+            min="<%= new Date().toISOString().slice(0,16) %>"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Venue / Location</label>
+          <input class="form-input" name="venue" type="text" placeholder="e.g. Central Tennis Club, Court 3"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Surface</label>
+            <select class="form-select" name="surface">
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+              <option value="indoor">Indoor</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Format</label>
+            <select class="form-select" name="format">
+              <option value="best_of_3">Best of 3</option>
+              <option value="best_of_5">Best of 5</option>
+              <option value="best_of_1">Best of 1</option>
+              <option value="practice">Practice</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" name="notes" placeholder="Any notes..."></textarea>
+        </div>
+        <div class="notif-info">
+          <div style="font-size:12px;color:var(--gray-600);background:var(--green-50);border:1px solid var(--green-200);border-radius:6px;padding:10px 12px;">
+            📨 All players will receive notifications when scheduled, and a <strong>1-hour reminder</strong> before the match.
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:14px;width:100%;">📅 Schedule & Notify</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scheduled matches list -->
+  <div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px;">Your Matches</div>
+      <% const upcoming = scheduled.filter(m=>m.status==='scheduled'&&new Date(m.scheduled_at)>now);
+         const past = scheduled.filter(m=>m.status!=='scheduled'||new Date(m.scheduled_at)<=now); %>
+
+      <% if(upcoming.length===0&&scheduled.length===0){ %>
+      <div class="empty-state" style="padding:28px;">
+        <div class="empty-icon">📅</div>
+        <div class="empty-text">No matches scheduled</div>
+        <div class="empty-sub">Use the form to schedule your first match</div>
+      </div>
+      <% } %>
+
+      <% if(upcoming.length>0){ %>
+      <div style="font-size:12px;font-weight:600;color:var(--green-700);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Upcoming</div>
+      <div class="match-list" style="margin-bottom:16px;">
+        <% upcoming.forEach(m=>{ const tl=teamLabel(m,uid); const isD=m.match_type==='doubles'; %>
+        <div class="match-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <div class="match-outcome" style="background:var(--green-100);color:var(--green-800);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">📅</div>
+            <div style="flex:1;min-width:0;">
+              <% if(isD){ %>
+              <div class="vs-text" style="font-size:13px;"><strong><%= tl.myTeam %></strong></div>
+              <div class="vs-sub">vs <strong><%= tl.oppTeam %></strong></div>
+              <% } else { %>
+              <div class="vs-text">vs <strong><%= tl.opp %></strong></div>
+              <% } %>
+              <div class="vs-sub"><%= fmtDT(m.scheduled_at) %><%= m.venue?' · '+m.venue:'' %></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+              <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+              <% if(isD){ %><span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:#ede9fe;color:#7c3aed;">doubles</span><% } %>
+            </div>
+            <form method="POST" action="/schedule/<%= m.id %>/cancel" onsubmit="return confirm('Cancel this match?')" style="margin-left:4px;">
+              <button type="submit" class="btn btn-danger btn-sm">Cancel</button>
+            </form>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <% if(past.length>0){ %>
+      <div style="font-size:12px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Past / Cancelled</div>
+      <div class="match-list">
+        <% past.slice(0,8).forEach(m=>{ const tl=teamLabel(m,uid); const isD=m.match_type==='doubles'; %>
+        <div class="match-row" style="opacity:0.65;">
+          <div class="match-outcome outcome-nr" style="font-size:13px;"><%= m.status==='cancelled'?'❌':'✓' %></div>
+          <div class="match-vs">
+            <% if(isD){ %>
+            <div class="vs-text" style="font-size:12px;"><%= tl.myTeam %> vs <%= tl.oppTeam %></div>
+            <% } else { %>
+            <div class="vs-text">vs <%= tl.opp %></div>
+            <% } %>
+            <div class="vs-sub"><%= fmtDT(m.scheduled_at) %></div>
+          </div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:<%= m.status==='cancelled'?'#fee2e2':'var(--gray-100)' %>;color:<%= m.status==='cancelled'?'#991b1b':'var(--gray-500)' %>;font-weight:500;"><%= m.status %></span>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>
+@media(max-width:640px){.sched-grid{grid-template-columns:1fr!important;}}
+</style>
+
+<script>
+function setType(t) {
+  const isD = t === 'doubles';
+  document.getElementById('singles-fields').style.display = isD ? 'none' : 'block';
+  document.getElementById('doubles-fields').style.display = isD ? 'block' : 'none';
+  // single opponent field required only for singles
+  document.getElementById('singleOpp').required  = !isD;
+  document.getElementById('singleOpp').disabled  = isD;
+  document.getElementById('partnerSel').disabled = !isD;
+  document.getElementById('doubleOpp1').disabled = !isD;
+  document.getElementById('doubleOpp2').disabled = !isD;
+  // tab styling
+  document.getElementById('tab-singles').style.background = isD ? '#fff' : 'var(--green-600)';
+  document.getElementById('tab-singles').style.color      = isD ? 'var(--gray-500)' : '#fff';
+  document.getElementById('tab-doubles').style.background = isD ? 'var(--green-600)' : '#fff';
+  document.getElementById('tab-doubles').style.color      = isD ? '#fff' : 'var(--gray-500)';
+}
+</script>
+
+<%- include('layout_bottom') %>

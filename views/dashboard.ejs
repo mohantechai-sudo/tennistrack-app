@@ -1,0 +1,175 @@
+<%
+  const winRate = stats.total>0?Math.round((stats.wins/stats.total)*100):0;
+  const losses = stats.total-stats.wins;
+  function outcome(m,uid){if(!m.winner_id)return'nr';return m.winner_id===uid?'win':'loss';}
+  function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+  function fmtDT(d){return new Date(d).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+  function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+  const typeIcon={welcome:'👋',match:'🎾',schedule:'📅',reminder:'⏰',alert:'❌',info:'ℹ️'};
+%>
+<%- include('layout_top',{title:'Dashboard',page:'dashboard',user}) %>
+
+<div class="stats-grid">
+  <div class="stat-card"><div class="stat-label">Total matches</div><div class="stat-value"><%= stats.total %></div></div>
+  <div class="stat-card"><div class="stat-label">Wins</div><div class="stat-value green"><%= stats.wins %></div><span class="stat-badge badge-win">W</span></div>
+  <div class="stat-card"><div class="stat-label">Losses</div><div class="stat-value" style="color:#dc2626;"><%= losses %></div><span class="stat-badge badge-loss">L</span></div>
+  <div class="stat-card"><div class="stat-label">Win rate</div><div class="stat-value green"><%= winRate %>%</div></div>
+</div>
+
+<% if(upcoming.length>0){ %>
+<div class="card" style="margin-bottom:20px;border-left:3px solid var(--green-400);">
+  <div class="card-header"><div class="card-title">📅 Upcoming Matches</div><a href="/schedule" class="btn btn-outline btn-sm">View all</a></div>
+  <div class="match-list">
+    <% upcoming.forEach(m=>{ const opp=m.player1_id===uid?m.p2name:m.p1name; %>
+    <div class="match-row">
+      <div style="font-size:20px;">📅</div>
+      <div class="match-vs"><div class="vs-text">vs <strong><%= opp %></strong></div><div class="vs-sub"><%= fmtDT(m.scheduled_at) %><%= m.venue?' · '+m.venue:'' %></div></div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+<% } %>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;" class="dashboard-grid">
+  <div class="card">
+    <div class="card-header"><div><div class="card-title">Recent matches</div><div class="card-sub">Last 5 matches</div></div><a href="/matches" class="btn btn-outline btn-sm">View all</a></div>
+    <% if(matches.length===0){ %>
+    <div class="empty-state" style="padding:24px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches yet</div><a href="/matches/new" class="btn btn-primary btn-sm" style="margin-top:12px;">+ Log match</a></div>
+    <% }else{ %><div class="match-list">
+    <% matches.forEach(m=>{const oc=outcome(m,uid);const opp=m.player1_id===uid?m.p2name:m.p1name; %>
+    <a href="/matches/<%= m.id %>" class="match-row">
+      <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
+      <div class="match-vs"><div class="vs-text">vs <%= opp %></div><div class="vs-sub"><%= fmtDate(m.played_at) %></div></div>
+      <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+      <div class="match-score"><%= m.score %></div>
+    </a>
+    <% }) %></div><% } %>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-header"><div class="card-title">Head-to-head</div><a href="/compare" class="btn btn-outline btn-sm">Compare</a></div>
+      <% if(opponents.length===0){ %><div class="empty-state" style="padding:20px;"><div class="empty-icon">⚔️</div><div class="empty-text">No opponents yet</div></div>
+      <% }else{ %><div style="display:flex;flex-direction:column;gap:10px;">
+      <% opponents.forEach(o=>{const oppW=o.played-o.wins;const pct=o.played>0?Math.round((o.wins/o.played)*100):0; %>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:14px;font-weight:500;">@<%= o.username %></span><span style="font-size:13px;color:var(--gray-500);"><%= o.wins %>–<%= oppW %> (<%= pct %>%)</span></div><div class="winbar"><div class="winbar-fill" style="width:<%= pct %>%"></div></div></div>
+      <% }) %></div><% } %>
+    </div>
+
+    <% if(notifications.length>0){ %>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔔 Recent alerts</div><a href="/notifications" class="btn btn-outline btn-sm">All</a></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <% notifications.slice(0,3).forEach(n=>{ %>
+        <a href="<%= n.link||'#' %>" style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100);text-decoration:none;">
+          <span style="font-size:16px;flex-shrink:0;"><%= typeIcon[n.type]||'🔔' %></span>
+          <div><div style="font-size:13px;font-weight:500;color:var(--gray-800);"><%= n.title %></div><div style="font-size:12px;color:var(--gray-500);"><%= n.message.slice(0,60) %><%= n.message.length>60?'…':'' %></div></div>
+        </a>
+        <% }) %>
+      </div>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<!-- Charts -->
+<% if(stats.total > 0) { %>
+<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:20px;" class="charts-top-grid">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Win / Loss Split</div></div>
+    <div style="position:relative;height:200px;display:flex;align-items:center;justify-content:center;">
+      <canvas id="pieChart"></canvas>
+    </div>
+    <div style="display:flex;justify-content:center;gap:20px;padding:12px 0 4px;font-size:12px;color:var(--gray-500);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a;margin-right:4px;"></span>Wins (<%= chartData.wins %>)</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#dc2626;margin-right:4px;"></span>Losses (<%= chartData.losses %>)</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Monthly Activity</div><span style="font-size:12px;color:var(--gray-400);">Last 6 months</span></div>
+    <div style="position:relative;height:200px;">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<% if(chartData.surfaces.length > 0) { %>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Performance by Surface</div></div>
+  <div style="position:relative;height:<%= Math.max(120, chartData.surfaces.length * 56) %>px;">
+    <canvas id="surfaceChart"></canvas>
+  </div>
+</div>
+<% } %>
+<% } %>
+
+<style>
+@media(max-width:640px){.dashboard-grid{grid-template-columns:1fr!important;}.charts-top-grid{grid-template-columns:1fr!important;}}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const cd = <%- JSON.stringify(chartData) %>;
+  const GREEN='#16a34a', RED='#dc2626', LIGHT='#86efac', GRAY='#9ca3af';
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  Chart.defaults.font.size = 12;
+
+  // Doughnut — win/loss split
+  new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Wins','Losses'],
+      datasets: [{ data: [cd.wins, cd.losses], backgroundColor: [GREEN, RED], borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      cutout: '68%', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } } }
+    }
+  });
+
+  // Grouped bar — monthly wins vs total
+  new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: {
+      labels: cd.monthLabels,
+      datasets: [
+        { label: 'Wins',   data: cd.monthWins,  backgroundColor: GREEN, borderRadius: 4, barPercentage: 0.55 },
+        { label: 'Played', data: cd.monthTotal, backgroundColor: '#dcfce7', borderRadius: 4, barPercentage: 0.55 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: GRAY } },
+        y: { beginAtZero: true, ticks: { stepSize: 1, color: GRAY }, grid: { color: '#f3f4f6' } }
+      }
+    }
+  });
+
+  // Horizontal bar — surface performance
+  if (document.getElementById('surfaceChart')) {
+    const surfLabels = cd.surfaces.map(s => s.charAt(0).toUpperCase()+s.slice(1));
+    new Chart(document.getElementById('surfaceChart'), {
+      type: 'bar',
+      data: {
+        labels: surfLabels,
+        datasets: [
+          { label: 'Wins',   data: cd.surfaceWins,   backgroundColor: GREEN,   borderRadius: 4, barPercentage: 0.5 },
+          { label: 'Losses', data: cd.surfaceLosses, backgroundColor: RED,     borderRadius: 4, barPercentage: 0.5 }
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } } },
+        scales: {
+          x: { beginAtZero: true, ticks: { stepSize: 1, color: GRAY }, grid: { color: '#f3f4f6' } },
+          y: { grid: { display: false }, ticks: { color: GRAY } }
+        }
+      }
+    });
+  }
+})();
+</script>
+<%- include('layout_bottom') %>

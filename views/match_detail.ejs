@@ -1,0 +1,60 @@
+<%
+  function fmtDate(d) { return new Date(d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}); }
+  const isWin = match.winner_id === uid;
+  const isLoss = match.winner_id && match.winner_id !== uid;
+  const opp = match.player1_id === uid ? match.p2name : match.p1name;
+  const oppFull = match.player1_id === uid ? match.p2full : match.p1full;
+%>
+<%- include('layout_top',{title:'Match Detail',page:'matches',user}) %>
+
+<div style="max-width:560px;">
+  <a href="/matches" style="font-size:13px;color:var(--gray-500);display:flex;align-items:center;gap:4px;margin-bottom:16px;">← Back to matches</a>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div style="text-align:center;padding:8px 0 16px;">
+      <div style="font-size:13px;color:var(--gray-500);margin-bottom:12px;"><%= fmtDate(match.played_at) %></div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:24px;">
+        <div style="text-align:center;">
+          <div style="width:52px;height:52px;border-radius:50%;background:var(--green-100);color:var(--green-800);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 8px;"><%= user.username[0].toUpperCase() %></div>
+          <div style="font-size:14px;font-weight:600;color:var(--gray-800);"><%= user.full_name||user.username %></div>
+          <div style="font-size:12px;color:var(--gray-500);">@<%= user.username %></div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:28px;font-weight:800;color:var(--gray-700);font-family:monospace;letter-spacing:1px;"><%= match.score %></div>
+          <div style="margin-top:8px;">
+            <% if(isWin){ %><span class="stat-badge badge-win" style="font-size:13px;padding:4px 14px;">You won</span>
+            <% }else if(isLoss){ %><span class="stat-badge badge-loss" style="font-size:13px;padding:4px 14px;"><%= opp %> won</span>
+            <% }else{ %><span class="stat-badge" style="font-size:13px;padding:4px 14px;background:var(--gray-100);color:var(--gray-600);">No result</span><% } %>
+          </div>
+        </div>
+        <div style="text-align:center;">
+          <div style="width:52px;height:52px;border-radius:50%;background:var(--gray-100);color:var(--gray-600);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 8px;"><%= opp[0].toUpperCase() %></div>
+          <div style="font-size:14px;font-weight:600;color:var(--gray-800);"><%= oppFull||opp %></div>
+          <div style="font-size:12px;color:var(--gray-500);">@<%= opp %></div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--gray-200);padding-top:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div><div style="font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;letter-spacing:.04em;">Surface</div><div style="font-size:14px;font-weight:500;margin-top:4px;text-transform:capitalize;"><%= match.surface %></div></div>
+      <div><div style="font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;letter-spacing:.04em;">Format</div><div style="font-size:14px;font-weight:500;margin-top:4px;"><%= match.format?.replace(/_/g,' ') %></div></div>
+      <div><div style="font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;letter-spacing:.04em;">Type</div><div style="font-size:14px;font-weight:500;margin-top:4px;text-transform:capitalize;"><%= match.match_type||'Singles' %></div></div>
+    </div>
+    <% if(match.notes){ %>
+    <div style="border-top:1px solid var(--gray-200);padding-top:16px;margin-top:16px;">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Notes</div>
+      <div style="font-size:14px;color:var(--gray-700);line-height:1.6;"><%= match.notes %></div>
+    </div>
+    <% } %>
+  </div>
+
+  <div style="display:flex;gap:10px;align-items:center;">
+    <a href="/compare?opponent=<%= match.player1_id===uid?match.player2_id:match.player1_id %>" class="btn btn-green-outline btn-sm">⚔️ Compare with <%= opp %></a>
+    <% if(isAdmin){ %>
+    <form method="POST" action="/matches/<%= match.id %>/delete" style="margin-left:auto;" onsubmit="return confirm('Delete this match? Admin action.')">
+      <button type="submit" class="btn btn-danger btn-sm">🛡️ Delete (Admin)</button>
+    </form>
+    <% } %>
+  </div>
+</div>
+
+<%- include('layout_bottom') %>

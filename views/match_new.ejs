@@ -1,0 +1,103 @@
+<%- include('layout_top', { title: 'Log Match', page: 'new_match', user }) %>
+
+<div style="max-width:560px;">
+  <% if (error) { %>
+  <div class="alert alert-error"><%= error %></div>
+  <% } %>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">New match</div>
+    </div>
+
+    <form method="POST" action="/matches/new">
+      <div class="form-group">
+        <label class="form-label">Opponent</label>
+        <select class="form-select" name="opponent_id" required>
+          <option value="">Select opponent...</option>
+          <% players.forEach(p => { %>
+          <option value="<%= p.id %>"><%= p.full_name || p.username %> (@<%= p.username %>)</option>
+          <% }) %>
+        </select>
+        <% if (players.length === 0) { %>
+        <p style="font-size:12px;color:#dc2626;margin-top:4px;">No other players registered yet. Ask a friend to sign up!</p>
+        <% } %>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Score <span style="font-size:12px;color:var(--gray-400);">(e.g. 6-3, 7-5)</span></label>
+        <input class="form-input" name="score" type="text" placeholder="6-3, 7-5" required/>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Result</label>
+          <select class="form-select" name="winner_id">
+            <option value="">No result recorded</option>
+            <option value="<%= user.id %>">I won</option>
+          </select>
+          <script>
+            document.querySelector('select[name=opponent_id]').addEventListener('change', function() {
+              const sel = document.querySelector('select[name=winner_id]');
+              const oppId = this.value;
+              const oppName = this.options[this.selectedIndex].text.split('(')[0].trim();
+              const existing = sel.querySelector('.opp-opt');
+              if (existing) existing.remove();
+              if (oppId) {
+                const opt = document.createElement('option');
+                opt.value = oppId;
+                opt.className = 'opp-opt';
+                opt.textContent = oppName + ' won';
+                sel.appendChild(opt);
+              }
+            });
+          </script>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Surface</label>
+          <select class="form-select" name="surface">
+            <option value="hard">Hard</option>
+            <option value="clay">Clay</option>
+            <option value="grass">Grass</option>
+            <option value="indoor">Indoor</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select class="form-select" name="format">
+            <option value="best_of_3">Best of 3</option>
+            <option value="best_of_5">Best of 5</option>
+            <option value="best_of_1">Best of 1</option>
+            <option value="practice">Practice / Friendly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Match type</label>
+          <select class="form-select" name="match_type">
+            <option value="singles">Singles</option>
+            <option value="doubles">Doubles</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date played</label>
+          <input class="form-input" name="played_at" type="date" value="<%= new Date().toISOString().split('T')[0] %>"/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Notes <span style="font-size:12px;color:var(--gray-400);">(optional)</span></label>
+        <textarea class="form-textarea" name="notes" placeholder="How did the match go?"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button type="submit" class="btn btn-primary">Save match</button>
+        <a href="/matches" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('layout_bottom') %>

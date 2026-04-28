@@ -1,0 +1,134 @@
+<%
+const playerLimit = plan.playerLimit===9999?'∞':plan.playerLimit;
+const ENROLL_LABEL = {open:'Open',invite_only:'Invite Only',closed:'Closed'};
+%>
+<%- include('layout_top',{title:league.name+' — Settings',page:'leagues',user}) %>
+
+<% if(error){ %><div class="alert alert-error" style="margin-bottom:16px;"><%= error %></div><% } %>
+<% if(success){ %><div class="alert alert-success" style="margin-bottom:16px;"><%= success %></div><% } %>
+<% if(typeof req !== 'undefined' && req && req.query && req.query.err==='limit'){ %>
+<div class="alert alert-error" style="margin-bottom:16px;">Cannot downgrade — your current player count exceeds that plan's limit.</div>
+<% } %>
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+  <a href="/leagues/<%= league.id %>" style="font-size:13px;color:var(--gray-500);">← <%= league.name %></a>
+  <span style="color:var(--gray-300);">/</span>
+  <span style="font-size:13px;font-weight:600;color:var(--gray-700);">Settings</span>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="settings-grid">
+
+  <!-- Left column -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- General settings -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚙️ General</div></div>
+      <form method="POST" action="/leagues/<%= league.id %>/settings">
+        <div class="form-group">
+          <label class="form-label">League name</label>
+          <input class="form-input" name="name" type="text" value="<%= league.name %>" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input class="form-input" name="description" type="text" value="<%= league.description||'' %>" placeholder="Short description..."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Enrollment mode</label>
+          <select class="form-input" name="enrollment">
+            <option value="open" <%= (league.enrollment||'open')==='open'?'selected':'' %>>🌐 Open — anyone can join</option>
+            <option value="invite_only" <%= (league.enrollment||'open')==='invite_only'?'selected':'' %>>✉️ Invite Only — invite link required</option>
+            <option value="closed" <%= (league.enrollment||'open')==='closed'?'selected':'' %>>🔒 Closed — no new players</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
+      </form>
+    </div>
+
+    <!-- Invite players -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">✉️ Invite Players</div><div class="card-sub"><%= members.length %> / <%= playerLimit %> players enrolled</div></div>
+      </div>
+      <% if(members.length >= plan.playerLimit && plan.playerLimit!==9999){ %>
+      <div style="background:#fef9c3;border:1px solid #fef08a;border-radius:6px;padding:10px 12px;font-size:13px;color:#854d0e;margin-bottom:12px;">⚠️ Player limit reached. <a href="#plans" style="color:#854d0e;font-weight:600;">Upgrade your plan</a> to invite more players.</div>
+      <% } else { %>
+      <form method="POST" action="/leagues/<%= league.id %>/invite" style="display:flex;gap:8px;">
+        <input class="form-input" name="email" type="email" placeholder="player@email.com" required style="flex:1;"/>
+        <button type="submit" class="btn btn-primary btn-sm">Send invite</button>
+      </form>
+      <% } %>
+
+      <% if(invites.length>0){ %>
+      <div style="margin-top:14px;border-top:1px solid var(--gray-100);padding-top:12px;">
+        <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Pending invites</div>
+        <% invites.forEach(inv=>{ %>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--gray-50);font-size:13px;">
+          <span style="color:var(--gray-700);"><%= inv.email %></span>
+          <span style="font-size:11px;color:var(--gray-400);">expires <%= new Date(inv.expires_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) %></span>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+      <p style="font-size:12px;color:var(--gray-400);margin-top:10px;">An email invite link is sent. If email is not configured, the link prints to the server console.</p>
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Player management -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">👥 Enrolled Players</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <% members.forEach(m=>{ %>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-50);">
+          <div style="width:30px;height:30px;border-radius:50%;background:<%= m.id===uid?'var(--green-100)':'var(--gray-100)' %>;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;color:<%= m.id===uid?'var(--green-700)':'var(--gray-500)' %>;"><%= (m.full_name||m.username)[0].toUpperCase() %></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:500;"><%= m.full_name||m.username %><% if(m.id===uid){ %> <span style="font-size:11px;color:var(--green-600);">(you · creator)</span><% } %></div>
+            <div style="font-size:11px;color:var(--gray-400);">@<%= m.username %></div>
+          </div>
+          <% if(m.id!==uid){ %>
+          <form method="POST" action="/leagues/<%= league.id %>/members/<%= m.id %>/remove" style="margin:0;" onsubmit="return confirm('Remove <%= m.username %> from the league?')">
+            <button type="submit" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px;">✕</button>
+          </form>
+          <% } %>
+        </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <!-- Plan upgrade -->
+    <div class="card" id="plans">
+      <div class="card-header"><div class="card-title">💳 League Plan</div></div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <% Object.entries(LEAGUE_PLANS).forEach(([key,p])=>{ const isCurrent=(league.plan||'free')===key; %>
+        <div style="border:2px solid <%= isCurrent?p.color:'var(--gray-200)' %>;border-radius:var(--radius);padding:14px;background:<%= isCurrent?p.bg+'44':'#fff' %>;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div>
+              <span style="font-weight:700;color:<%=p.color%>;font-size:14px;"><%= p.label %></span>
+              <% if(isCurrent){ %><span style="font-size:11px;background:<%=p.color%>;color:#fff;padding:1px 8px;border-radius:999px;margin-left:6px;">Current</span><% } %>
+            </div>
+            <span style="font-weight:700;font-size:16px;color:var(--gray-800);">$<%= p.price %><span style="font-weight:400;font-size:11px;color:var(--gray-400);">/mo</span></span>
+          </div>
+          <ul style="margin:0 0 10px;padding:0 0 0 16px;font-size:12px;color:var(--gray-600);line-height:1.8;">
+            <% p.features.forEach(f=>{ %><li><%= f %></li><% }) %>
+          </ul>
+          <% if(!isCurrent){ %>
+          <form method="POST" action="/leagues/<%= league.id %>/upgrade" style="margin:0;">
+            <input type="hidden" name="plan" value="<%= key %>"/>
+            <button type="submit" class="btn btn-sm" style="background:<%=p.color%>;color:#fff;border:none;cursor:pointer;" onclick="return confirm('Switch to the <%= p.label %> plan?')">
+              <%= p.price > (LEAGUE_PLANS[league.plan||'free']?.price||0) ? 'Upgrade' : 'Downgrade' %> to <%= p.label %>
+            </button>
+          </form>
+          <% } %>
+        </div>
+        <% }) %>
+      </div>
+      <p style="font-size:11px;color:var(--gray-400);margin-top:10px;">Plan changes are instant. Billing integration can be wired to Stripe.</p>
+    </div>
+  </div>
+</div>
+
+<style>@media(max-width:640px){.settings-grid{grid-template-columns:1fr!important;}}</style>
+<%- include('layout_bottom') %>

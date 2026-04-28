@@ -1,0 +1,57 @@
+<%- include('layout_top',{title:'Profile',page:'profile',user}) %>
+<div style="max-width:480px;">
+  <% if(success){%><div class="alert alert-success"><%= success %></div><%}%>
+  <% if(error){%><div class="alert alert-error"><%= error %></div><%}%>
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+      <div style="width:64px;height:64px;border-radius:50%;background:var(--green-500);color:white;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;flex-shrink:0;"><%= user.username[0].toUpperCase() %></div>
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--gray-800);"><%= user.full_name||user.username %></div>
+        <div style="font-size:13px;color:var(--gray-500);">@<%= user.username %> · Member since <%= new Date(user.created_at).toLocaleDateString('en-US',{month:'long',year:'numeric'}) %></div>
+        <% if(user.is_admin){ %><span style="background:#fef3c7;color:#92400e;font-size:11px;padding:2px 8px;border-radius:3px;font-weight:700;">ADMIN</span><% } %>
+      </div>
+    </div>
+    <form method="POST" action="/profile">
+      <div class="form-group"><label class="form-label">Full name</label><input class="form-input" name="full_name" type="text" value="<%= user.full_name||'' %>"/></div>
+      <div class="form-group"><label class="form-label">Email <span style="font-size:11px;color:var(--gray-400);">(used for email notifications)</span></label><input class="form-input" name="email" type="email" value="<%= user.email %>" required/></div>
+      <div class="form-group">
+        <label class="form-label">Phone <span style="font-size:11px;color:var(--gray-400);">(for SMS & WhatsApp, e.g. +1234567890)</span></label>
+        <input class="form-input" name="phone" type="tel" value="<%= user.phone||'' %>" placeholder="+1 234 567 8900"/>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="whatsapp_enabled" value="1" <%= user.whatsapp_enabled?'checked':'' %> style="width:16px;height:16px;accent-color:var(--green-600);"/>
+          <span class="form-label" style="margin:0;">Enable WhatsApp notifications</span>
+        </label>
+        <div style="font-size:12px;color:var(--gray-400);margin-top:4px;margin-left:24px;">Uses Twilio WhatsApp sandbox. Phone number must be verified in Twilio first.</div>
+      </div>
+      <div class="form-group"><label class="form-label">New password <span style="font-size:12px;color:var(--gray-400);">(leave blank to keep current)</span></label><input class="form-input" name="password" type="password" placeholder="Enter new password" minlength="6"/></div>
+      <div class="form-group"><label class="form-label">Username <span style="font-size:12px;color:var(--gray-400);">(cannot be changed)</span></label><input class="form-input" value="<%= user.username %>" disabled style="background:var(--gray-50);color:var(--gray-400);cursor:not-allowed;"/></div>
+      <button type="submit" class="btn btn-primary" style="margin-top:4px;">Save changes</button>
+    </form>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:8px;">📨 Notification Channels</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--gray-50);border-radius:6px;border:1px solid var(--gray-200);">
+        <span style="font-size:18px;">📧</span>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:500;">Email</div><div style="font-size:12px;color:var(--gray-500);"><%= user.email %></div></div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:var(--green-100);color:var(--green-800);font-weight:600;">Active</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--gray-50);border-radius:6px;border:1px solid var(--gray-200);">
+        <span style="font-size:18px;">📱</span>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:500;">SMS</div><div style="font-size:12px;color:var(--gray-500);"><%= user.phone||'No phone added' %></div></div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:<%= user.phone?'var(--green-100)':'var(--gray-100)' %>;color:<%= user.phone?'var(--green-800)':'var(--gray-500)' %>;font-weight:600;"><%= user.phone?'Active':'No phone' %></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--gray-50);border-radius:6px;border:1px solid var(--gray-200);">
+        <span style="font-size:18px;">💬</span>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:500;">WhatsApp</div><div style="font-size:12px;color:var(--gray-500);"><%= user.phone||'No phone added' %></div></div>
+        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:<%= (user.phone&&user.whatsapp_enabled)?'var(--green-100)':'var(--gray-100)' %>;color:<%= (user.phone&&user.whatsapp_enabled)?'var(--green-800)':'var(--gray-500)' %>;font-weight:600;"><%= (user.phone&&user.whatsapp_enabled)?'Active':'Off' %></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title" style="margin-bottom:4px;">Danger zone</div><p style="font-size:13px;color:var(--gray-500);margin-bottom:12px;">Sign out of your account on this device.</p><a href="/logout" class="btn btn-danger btn-sm">Sign out</a></div>
+</div>
+<%- include('layout_bottom') %>

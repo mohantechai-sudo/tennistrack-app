@@ -1,0 +1,122 @@
+<%
+  function fmtDate(d) {
+    return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  }
+  function surfaceClass(s) {
+    const map = { hard:'surface-hard', clay:'surface-clay', grass:'surface-grass', indoor:'surface-indoor' };
+    return map[s] || 'surface-hard';
+  }
+  function outcome(m, uid) {
+    if (!m.winner_id) return 'nr';
+    return m.winner_id === uid ? 'win' : 'loss';
+  }
+%>
+<%- include('layout_top', { title: 'Compare', page: 'compare', user }) %>
+
+<div style="max-width:640px;">
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-title" style="margin-bottom:12px;">Select opponent to compare</div>
+    <form method="GET" action="/compare" style="display:flex;gap:10px;align-items:center;">
+      <select class="form-select" name="opponent" style="flex:1;">
+        <option value="">Choose an opponent...</option>
+        <% opponents.forEach(o => { %>
+        <option value="<%= o.id %>" <%= selectedOpp===o.id ? 'selected' : '' %>>
+          @<%= o.username %> (<%= o.full_name || o.username %>)
+        </option>
+        <% }) %>
+      </select>
+      <button type="submit" class="btn btn-primary">Compare</button>
+    </form>
+    <% if (opponents.length === 0) { %>
+    <p style="font-size:13px;color:var(--gray-500);margin-top:10px;">Log matches against other players to compare head-to-head records.</p>
+    <% } %>
+  </div>
+
+  <% if (compareData) { %>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="compare-header">
+      <div class="compare-player">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--green-100);color:var(--green-800);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 8px;">
+          <%= user.username[0].toUpperCase() %>
+        </div>
+        <div class="cp-name"><%= user.full_name || user.username %></div>
+        <div class="cp-wins"><%= compareData.myWins %></div>
+        <div class="cp-sub">wins</div>
+      </div>
+
+      <div class="vs-divider">VS</div>
+
+      <div class="compare-player">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--gray-100);color:var(--gray-600);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 8px;">
+          <%= compareData.opponent.username[0].toUpperCase() %>
+        </div>
+        <div class="cp-name"><%= compareData.opponent.full_name || compareData.opponent.username %></div>
+        <div class="cp-wins" style="color:var(--gray-600);"><%= compareData.oppWins %></div>
+        <div class="cp-sub">wins</div>
+      </div>
+    </div>
+
+    <% const total = compareData.total; const myPct = total > 0 ? Math.round((compareData.myWins/total)*100) : 50; %>
+    <div style="margin:8px 0 4px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gray-500);margin-bottom:4px;">
+        <span><%= myPct %>%</span>
+        <span><%= total %> match<%= total!==1?'es':'' %></span>
+        <span><%= 100-myPct %>%</span>
+      </div>
+      <div style="height:10px;border-radius:999px;background:var(--gray-200);overflow:hidden;display:flex;">
+        <div style="width:<%= myPct %>%;background:var(--green-500);border-radius:999px 0 0 999px;transition:width .6s;"></div>
+        <div style="width:<%= 100-myPct %>%;background:#fca5a5;border-radius:0 999px 999px 0;"></div>
+      </div>
+    </div>
+  </div>
+
+  <% if (Object.keys(compareData.bySurface).length > 0) { %>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:12px;">By surface</div>
+    <div class="surface-grid">
+      <% Object.entries(compareData.bySurface).forEach(([surface, data]) => { %>
+      <div class="surface-card">
+        <div class="sc-name"><%= surface %></div>
+        <div class="sc-record"><%= data.myWins %>–<%= data.oppWins %></div>
+        <div class="sc-total"><%= data.total %> match<%= data.total!==1?'es':'' %></div>
+      </div>
+      <% }) %>
+    </div>
+  </div>
+  <% } %>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">All matches vs @<%= compareData.opponent.username %></div>
+    </div>
+    <% if (compareData.h2h.length === 0) { %>
+    <div class="empty-state" style="padding:20px;">
+      <div class="empty-text">No matches found</div>
+    </div>
+    <% } else { %>
+    <div class="match-list">
+      <% compareData.h2h.forEach(m => {
+        const oc = outcome(m, uid);
+        const opp = m.player1_id === uid ? m.p2name : m.p1name;
+      %>
+      <a href="/matches/<%= m.id %>" class="match-row">
+        <div class="match-outcome outcome-<%= oc %>">
+          <%= oc==='win'?'W':oc==='loss'?'L':'–' %>
+        </div>
+        <div class="match-vs">
+          <div class="vs-text"><%= m.score %></div>
+          <div class="vs-sub"><%= m.format?.replace(/_/g,' ') %></div>
+        </div>
+        <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+        <div class="match-date"><%= fmtDate(m.played_at) %></div>
+      </a>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+
+  <% } %>
+</div>
+
+<%- include('layout_bottom') %>

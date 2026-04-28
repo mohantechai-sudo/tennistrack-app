@@ -1,0 +1,98 @@
+<%
+function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtJoined(d){return new Date(d).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
+function outcome(m,uid){if(!m.winner_id)return'nr';return m.winner_id===uid?'win':'loss';}
+const memberLimit = plan.memberLimit===9999?'∞':plan.memberLimit;
+const usagePct = plan.memberLimit===9999 ? 0 : Math.min(100,Math.round((stats.members/plan.memberLimit)*100));
+%>
+<%- include('layout_top',{title:club.name,page:'clubs',user}) %>
+
+<!-- Club header -->
+<div class="card" style="margin-bottom:20px;border-top:3px solid <%= plan.color %>;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="font-size:20px;font-weight:700;margin:0;color:var(--gray-800);"><%= club.name %></h2>
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:<%= plan.bg %>;color:<%= plan.color %>;"><%= plan.label %> Plan</span>
+      </div>
+      <% if(club.description){ %><div style="font-size:13px;color:var(--gray-500);margin-top:6px;"><%= club.description %></div><% } %>
+      <div style="font-size:12px;color:var(--gray-400);margin-top:6px;">Created by @<%= club.owner_name %> · <%= fmtDate(club.created_at) %></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="/clubs" class="btn btn-outline btn-sm">← All Clubs</a>
+      <% if(isAdmin){ %><a href="/clubs/<%= club.id %>/settings" class="btn btn-outline btn-sm">⚙️ Settings</a><% } %>
+    </div>
+  </div>
+
+  <!-- Plan usage bar -->
+  <div style="margin-top:20px;border-top:1px solid var(--gray-100);padding-top:16px;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gray-500);margin-bottom:6px;">
+      <span>Members — <strong style="color:var(--gray-700);"><%= stats.members %> / <%= memberLimit %></strong></span>
+      <% if(isAdmin && plan.label!=='Premium'){ %>
+      <a href="/clubs/<%= club.id %>/settings#plans" style="font-size:12px;color:<%= plan.color %>;font-weight:600;">Upgrade plan →</a>
+      <% } %>
+    </div>
+    <% if(plan.memberLimit!==9999){ %>
+    <div style="background:var(--gray-100);border-radius:999px;height:6px;overflow:hidden;">
+      <div style="width:<%= usagePct %>%;height:100%;background:<%= usagePct>=90?'#dc2626':plan.color %>;border-radius:999px;transition:.3s;"></div>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;" class="club-main-grid">
+
+  <!-- Activity feed -->
+  <div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎾 Recent Club Matches</div><span style="font-size:12px;color:var(--gray-400);">Last 10</span></div>
+      <% if(activity.length===0){ %>
+      <div class="empty-state" style="padding:28px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches yet</div><div style="font-size:13px;color:var(--gray-400);">Members' matches will appear here</div></div>
+      <% } else { %>
+      <div class="match-list">
+        <% activity.forEach(m=>{ const oc=outcome(m,uid); %>
+        <div class="match-row">
+          <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
+          <div class="match-vs">
+            <div class="vs-text"><strong><%= m.p1name %></strong> vs <strong><%= m.p2name %></strong></div>
+            <div class="vs-sub"><%= fmtDate(m.played_at) %><% if(m.winnername){ %> · 🏆 <%= m.winnername %><% } %></div>
+          </div>
+          <span class="match-surface surface-<%= m.surface %>"><%= m.surface %></span>
+          <div class="match-score"><%= m.score %></div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- Members sidebar -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👥 Members</div>
+        <span style="font-size:13px;color:var(--gray-500);"><%= members.length %></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <% members.forEach(m=>{ %>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:34px;height:34px;border-radius:50%;background:<%= m.id===uid?'var(--green-100)':'var(--gray-100)' %>;color:<%= m.id===uid?'var(--green-800)':'var(--gray-500)' %>;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;"><%= (m.full_name||m.username)[0].toUpperCase() %></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><%= m.full_name||m.username %><% if(m.id===uid){ %> <span style="font-size:11px;color:var(--green-600);">(you)</span><% } %></div>
+            <div style="font-size:11px;color:var(--gray-400);">@<%= m.username %> · joined <%= fmtJoined(m.joined_at) %></div>
+          </div>
+          <% if(m.role!=='member'){ %>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:<%= m.role==='owner'?'var(--green-100)':'#dbeafe' %>;color:<%= m.role==='owner'?'var(--green-700)':'#1d4ed8' %>;text-transform:uppercase;"><%= m.role %></span>
+          <% } %>
+        </div>
+        <% }) %>
+      </div>
+      <% if(isAdmin){ %>
+      <a href="/clubs/<%= club.id %>/settings" class="btn btn-outline btn-sm btn-full" style="margin-top:14px;">Manage members →</a>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>@media(max-width:640px){.club-main-grid{grid-template-columns:1fr!important;}}</style>
+<%- include('layout_bottom') %>

@@ -1,0 +1,286 @@
+<%
+  function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+  function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+  const CAT_LABEL = {mens_singles:"Men's Singles",mens_doubles:"Men's Doubles",womens_singles:"Women's Singles",womens_doubles:"Women's Doubles",mixed_doubles:"Mixed Doubles",open:"Open"};
+  const CAT_ICON  = {mens_singles:'👨',mens_doubles:'👬',womens_singles:'👩',womens_doubles:'👭',mixed_doubles:'👫',open:'🎾'};
+  const CAT_COLOR = {mens_singles:'#1d4ed8',mens_doubles:'#1d4ed8',womens_singles:'#be185d',womens_doubles:'#be185d',mixed_doubles:'#7c3aed',open:'#374151'};
+  const CAT_BG    = {mens_singles:'#dbeafe',mens_doubles:'#dbeafe',womens_singles:'#fce7f3',womens_doubles:'#fce7f3',mixed_doubles:'#ede9fe',open:'#f3f4f6'};
+  const cat = league.category||'open';
+  const isDoublesCat = ['mens_doubles','womens_doubles','mixed_doubles'].includes(cat);
+  const isSinglesCat = ['mens_singles','womens_singles'].includes(cat);
+  const autoType = isDoublesCat ? 'Doubles' : isSinglesCat ? 'Singles' : null;
+%>
+<%
+  const ENROLL_LABEL = {open:'Open Enrollment',invite_only:'Invite Only',closed:'Closed'};
+  const ENROLL_COLOR = {open:'var(--green-600)',invite_only:'#1d4ed8',closed:'#dc2626'};
+  const enrollKey = league.enrollment||'open';
+  const playerLimit = plan.playerLimit===9999?'∞':plan.playerLimit;
+  const usagePct = plan.playerLimit===9999 ? 0 : Math.min(100,Math.round((members.length/plan.playerLimit)*100));
+%>
+<%- include('layout_top',{title:league.name,page:'leagues',user}) %>
+
+<% if(error){ %><div class="alert alert-error" style="margin-bottom:16px;"><%= error %></div><% } %>
+<% if(success){ %><div class="alert alert-success" style="margin-bottom:16px;"><%= success %></div><% } %>
+<% if(joinErr==='limit'){ %><div class="alert alert-error" style="margin-bottom:16px;">⚠️ This league has reached its player limit. Ask the organiser to upgrade the plan.</div><% } %>
+<% if(joinErr==='invite_only'){ %><div class="alert alert-error" style="margin-bottom:16px;">🔒 This league is invite-only. Ask the organiser to send you an invite link.</div><% } %>
+<% if(joinErr==='closed'){ %><div class="alert alert-error" style="margin-bottom:16px;">🔒 This league is closed to new players.</div><% } %>
+
+<!-- Header -->
+<div class="card" style="margin-bottom:20px;border-top:3px solid <%= plan.color %>;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="font-size:20px;font-weight:700;color:var(--gray-800);margin:0;"><%= league.name %></h2>
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:<%= plan.bg %>;color:<%= plan.color %>;"><%= plan.label %> Plan</span>
+        <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:<%= league.status==='active'?'var(--green-100)':'var(--gray-100)' %>;color:<%= league.status==='active'?'var(--green-700)':'var(--gray-500)' %>;">
+          <%= league.status==='active'?'Active':'Ended' %>
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:<%= CAT_BG[cat] %>;color:<%= CAT_COLOR[cat] %>;">
+          <%= CAT_ICON[cat] %> <%= CAT_LABEL[cat] %>
+        </span>
+        <span style="font-size:12px;color:<%= ENROLL_COLOR[enrollKey] %>;font-weight:600;">● <%= ENROLL_LABEL[enrollKey] %></span>
+        <span style="font-size:13px;color:var(--gray-500);">📋 <%= league.format==='round_robin'?'Round Robin':'Knockout' %></span>
+        <span style="font-size:13px;color:var(--gray-500);">👤 @<%= league.creator_name %></span>
+        <span style="font-size:13px;color:var(--gray-500);">📅 <%= fmtDate(league.created_at) %></span>
+      </div>
+      <% if(league.description){ %><div style="font-size:13px;color:var(--gray-600);margin-top:4px;"><%= league.description %></div><% } %>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="/leagues" class="btn btn-outline btn-sm">← All Leagues</a>
+      <% if(isCreator){ %><a href="/leagues/<%= league.id %>/settings" class="btn btn-outline btn-sm">⚙️ Settings</a><% } %>
+      <% if(!isMember && league.status==='active' && enrollKey==='open'){ %>
+      <form method="POST" action="/leagues/<%= league.id %>/join" style="margin:0;">
+        <button type="submit" class="btn btn-primary btn-sm">Join League</button>
+      </form>
+      <% } %>
+      <% if(isMember && !isCreator){ %>
+      <form method="POST" action="/leagues/<%= league.id %>/leave" style="margin:0;" onsubmit="return confirm('Leave this league?')">
+        <button type="submit" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fecaca;">Leave</button>
+      </form>
+      <% } %>
+      <% if(isCreator && league.status==='active'){ %>
+      <form method="POST" action="/leagues/<%= league.id %>/end" style="margin:0;" onsubmit="return confirm('End this league? This cannot be undone.')">
+        <button type="submit" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fecaca;">End League</button>
+      </form>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- Player usage bar -->
+  <div style="margin-top:16px;border-top:1px solid var(--gray-100);padding-top:14px;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gray-500);margin-bottom:6px;">
+      <span>Players — <strong style="color:var(--gray-700);"><%= members.length %> / <%= playerLimit %></strong></span>
+      <% if(isCreator && plan.label!=='Premium'){ %>
+      <a href="/leagues/<%= league.id %>/settings#plans" style="font-size:12px;color:<%= plan.color %>;font-weight:600;">Upgrade plan →</a>
+      <% } %>
+    </div>
+    <% if(plan.playerLimit!==9999){ %>
+    <div style="background:var(--gray-100);border-radius:999px;height:6px;overflow:hidden;">
+      <div style="width:<%= usagePct %>%;height:100%;background:<%= usagePct>=90?'#dc2626':plan.color %>;border-radius:999px;transition:.3s;"></div>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;" class="league-grid">
+
+  <!-- Standings -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">🏆 Standings</div><span style="font-size:12px;color:var(--gray-400);">Win = 2 pts</span></div>
+    <% if(standings.length===0){ %>
+    <div class="empty-state" style="padding:24px;"><div class="empty-icon">📊</div><div class="empty-text">No matches yet</div></div>
+    <% } else { %>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="color:var(--gray-400);border-bottom:1px solid var(--gray-100);">
+          <th style="text-align:left;padding:6px 4px;font-weight:500;">#</th>
+          <th style="text-align:left;padding:6px 4px;font-weight:500;">Player</th>
+          <th style="text-align:center;padding:6px 4px;font-weight:500;">P</th>
+          <th style="text-align:center;padding:6px 4px;font-weight:500;">W</th>
+          <th style="text-align:center;padding:6px 4px;font-weight:500;">L</th>
+          <th style="text-align:center;padding:6px 4px;font-weight:500;">Pts</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% standings.forEach((s,i)=>{ %>
+        <tr style="border-bottom:1px solid var(--gray-50);<%= s.id===uid?'background:var(--green-50);':'' %>">
+          <td style="padding:8px 4px;color:var(--gray-400);font-weight:600;"><%= i+1 %></td>
+          <td style="padding:8px 4px;">
+            <a href="/leagues/<%= league.id %>/player/<%= s.id %>" style="font-weight:<%= s.id===uid?'700':'500' %>;color:<%= s.id===uid?'var(--green-700)':'var(--gray-800)' %>;text-decoration:none;">
+              <%= s.full_name||s.username %>
+            </a>
+            <% if(s.id===uid){ %><span style="font-size:10px;color:var(--green-600);margin-left:4px;">(you)</span><% } %>
+          </td>
+          <td style="text-align:center;padding:8px 4px;color:var(--gray-500);"><%= s.played %></td>
+          <td style="text-align:center;padding:8px 4px;color:var(--green-600);font-weight:600;"><%= s.wins %></td>
+          <td style="text-align:center;padding:8px 4px;color:#dc2626;"><%= s.losses %></td>
+          <td style="text-align:center;padding:8px 4px;font-weight:700;color:var(--gray-800);"><%= s.points %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <% } %>
+  </div>
+
+  <!-- Members + Log Match -->
+  <div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">👥 Members</div><span style="font-size:13px;color:var(--gray-500);"><%= members.length %> / <%= playerLimit %> players</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:4px;">
+        <% members.forEach(m=>{ %>
+        <a href="/leagues/<%= league.id %>/player/<%= m.id %>" style="font-size:13px;padding:4px 10px;border-radius:999px;background:<%= m.id===uid?'var(--green-100)':'var(--gray-100)' %>;color:<%= m.id===uid?'var(--green-700)':'var(--gray-600)' %>;font-weight:<%= m.id===uid?'600':'400' %>;text-decoration:none;">
+          @<%= m.username %>
+        </a>
+        <% }) %>
+      </div>
+    </div>
+
+    <% if(isMember && league.status==='active') { %>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">➕ Log Match</div>
+        <% if(autoType){ %><span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:<%= isDoublesCat?'#ede9fe':'#dcfce7' %>;color:<%= isDoublesCat?'#7c3aed':'#166534' %>"><%= autoType %></span><% } %>
+      </div>
+      <form method="POST" action="/leagues/<%= league.id %>/match">
+        <% if(autoType){ %><input type="hidden" name="match_type" value="<%= autoType.toLowerCase() %>"/><% } %>
+
+        <% if(isDoublesCat){ %>
+        <!-- Doubles: partner + 2 opponents -->
+        <div class="form-group">
+          <label class="form-label">Your partner</label>
+          <select class="form-input" name="partner_id" required>
+            <option value="">— Select your partner —</option>
+            <% members.filter(m=>m.id!==uid).forEach(m=>{ %>
+            <option value="<%= m.id %>"><%= m.full_name||m.username %> (@<%= m.username %>)</option>
+            <% }) %>
+          </select>
+        </div>
+        <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px;">Opponent team</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group">
+            <label class="form-label">Opponent 1</label>
+            <select class="form-input" name="opponent_id" required>
+              <option value="">— Select —</option>
+              <% members.filter(m=>m.id!==uid).forEach(m=>{ %>
+              <option value="<%= m.id %>"><%= m.full_name||m.username %> (@<%= m.username %>)</option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opponent 2</label>
+            <select class="form-input" name="opponent_partner_id" required>
+              <option value="">— Select —</option>
+              <% members.filter(m=>m.id!==uid).forEach(m=>{ %>
+              <option value="<%= m.id %>"><%= m.full_name||m.username %> (@<%= m.username %>)</option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+        <% } else { %>
+        <!-- Singles -->
+        <div class="form-group">
+          <label class="form-label">Opponent</label>
+          <select class="form-input" name="opponent_id" required>
+            <option value="">— Select opponent —</option>
+            <% members.filter(m=>m.id!==uid).forEach(m=>{ %>
+            <option value="<%= m.id %>"><%= m.full_name||m.username %> (@<%= m.username %>)</option>
+            <% }) %>
+          </select>
+        </div>
+        <% } %>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group">
+            <label class="form-label">Score</label>
+            <input class="form-input" name="score" type="text" placeholder="e.g. 6-3, 6-4" required/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Surface</label>
+            <select class="form-input" name="surface">
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+              <option value="indoor">Indoor</option>
+            </select>
+          </div>
+        </div>
+        <% if(!autoType){ %>
+        <div class="form-group">
+          <label class="form-label">Match type</label>
+          <select class="form-input" name="match_type">
+            <option value="singles">Singles</option>
+            <option value="doubles">Doubles</option>
+          </select>
+        </div>
+        <% } %>
+
+        <div class="form-group">
+          <label class="form-label">Winner</label>
+          <% if(isDoublesCat){ %>
+          <select class="form-input" name="winner_id">
+            <option value="">No result / walkover</option>
+            <option value="<%= uid %>">My team won</option>
+            <option value="_opp">Opponent team won</option>
+          </select>
+          <% } else { %>
+          <select class="form-input" name="winner_id">
+            <option value="">No result / walkover</option>
+            <option value="<%= uid %>"><%= user.full_name||user.username %> (you)</option>
+            <% members.filter(m=>m.id!==uid).forEach(m=>{ %>
+            <option value="<%= m.id %>"><%= m.full_name||m.username %></option>
+            <% }) %>
+          </select>
+          <% } %>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Save Match</button>
+      </form>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<!-- Match History -->
+<div class="card">
+  <div class="card-header"><div class="card-title">Match History</div><span style="font-size:13px;color:var(--gray-500);"><%= lmatches.length %> matches</span></div>
+  <% if(lmatches.length===0){ %>
+  <div class="empty-state" style="padding:32px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches logged yet</div></div>
+  <% } else { %>
+  <div class="match-list">
+    <% lmatches.forEach(m=>{ %>
+    <%
+      const isD = m.match_type==='doubles';
+      const onT1 = m.player1_id===uid || m.player1_partner_id===uid;
+      const onT2 = m.player2_id===uid || m.player2_partner_id===uid;
+      const involved = onT1||onT2;
+      const t1won = m.winner_id && (m.winner_id===m.player1_id || m.winner_id===m.player1_partner_id);
+      const t2won = m.winner_id && (m.winner_id===m.player2_id || m.winner_id===m.player2_partner_id);
+      const myWin = involved && ((onT1&&t1won)||(onT2&&t2won));
+      const myLoss = involved && m.winner_id && !myWin;
+      const oc = myWin?'win':myLoss?'loss':'nr';
+      const t1label = isD&&m.p1partnername ? `${m.p1name} & ${m.p1partnername}` : m.p1name;
+      const t2label = isD&&m.p2partnername ? `${m.p2name} & ${m.p2partnername}` : m.p2name;
+      const winnerLabel = t1won ? t1label : t2won ? t2label : null;
+    %>
+    <div class="match-row">
+      <% if(involved){ %>
+      <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
+      <% } else { %>
+      <div style="width:32px;text-align:center;font-size:14px;">🎾</div>
+      <% } %>
+      <div class="match-vs" style="flex:1;min-width:0;">
+        <div class="vs-text" style="font-size:13px;"><strong><%= t1label %></strong> vs <strong><%= t2label %></strong></div>
+        <div class="vs-sub"><%= fmtDate(m.played_at) %><% if(winnerLabel){ %> · 🏆 <%= winnerLabel %><% } %></div>
+      </div>
+      <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+      <span style="font-size:11px;font-weight:500;padding:2px 7px;border-radius:999px;background:<%= isD?'#ede9fe':'#dcfce7' %>;color:<%= isD?'#7c3aed':'#166534' %>;"><%= isD?'doubles':'singles' %></span>
+      <div class="match-score"><%= m.score %></div>
+    </div>
+    <% }) %>
+  </div>
+  <% } %>
+</div>
+
+<style>@media(max-width:640px){.league-grid{grid-template-columns:1fr!important;}}</style>
+<%- include('layout_bottom') %>

@@ -1,0 +1,87 @@
+<%
+  function outcome(m, uid) {
+    if (!m.winner_id) return 'nr';
+    return m.winner_id === uid ? 'win' : 'loss';
+  }
+  function fmtDate(d) {
+    return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  }
+  function surfaceClass(s) {
+    const map = { hard:'surface-hard', clay:'surface-clay', grass:'surface-grass', indoor:'surface-indoor' };
+    return map[s] || 'surface-hard';
+  }
+  const totalPages = Math.ceil(total / limit);
+%>
+<%- include('layout_top', { title: 'Match History', page: 'matches', user }) %>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+  <div style="font-size:13px;color:var(--gray-500);"><%= total %> match<%= total !== 1 ? 'es' : '' %></div>
+  <a href="/matches/new" class="btn btn-primary btn-sm">+ Log match</a>
+</div>
+
+<div class="filter-bar">
+  <form method="GET" action="/matches" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+    <select class="form-select" name="surface" onchange="this.form.submit()">
+      <option value="" <%= !surface ? 'selected' : '' %>>All surfaces</option>
+      <option value="hard" <%= surface==='hard' ? 'selected' : '' %>>Hard</option>
+      <option value="clay" <%= surface==='clay' ? 'selected' : '' %>>Clay</option>
+      <option value="grass" <%= surface==='grass' ? 'selected' : '' %>>Grass</option>
+      <option value="indoor" <%= surface==='indoor' ? 'selected' : '' %>>Indoor</option>
+    </select>
+    <select class="form-select" name="result" onchange="this.form.submit()">
+      <option value="" <%= !result ? 'selected' : '' %>>All results</option>
+      <option value="win" <%= result==='win' ? 'selected' : '' %>>Wins only</option>
+      <option value="loss" <%= result==='loss' ? 'selected' : '' %>>Losses only</option>
+    </select>
+    <% if (surface || result) { %>
+    <a href="/matches" class="btn btn-outline btn-sm">Clear</a>
+    <% } %>
+  </form>
+</div>
+
+<% if (matches.length === 0) { %>
+<div class="empty-state">
+  <div class="empty-icon">🎾</div>
+  <div class="empty-text">No matches found</div>
+  <div class="empty-sub">Try changing your filters or log a new match</div>
+  <a href="/matches/new" class="btn btn-primary btn-sm" style="margin-top:16px;">+ Log match</a>
+</div>
+<% } else { %>
+<div class="match-list">
+  <% matches.forEach(m => {
+    const oc = outcome(m, uid);
+    const opp = m.player1_id === uid ? m.p2name : m.p1name;
+  %>
+  <a href="/matches/<%= m.id %>" class="match-row">
+    <div class="match-outcome outcome-<%= oc %>">
+      <%= oc === 'win' ? 'W' : oc === 'loss' ? 'L' : '–' %>
+    </div>
+    <div class="match-vs">
+      <div class="vs-text">vs <strong><%= opp %></strong></div>
+      <div class="vs-sub"><%= m.format?.replace('_',' ') %></div>
+    </div>
+    <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+    <div class="match-score"><%= m.score %></div>
+    <div class="match-date"><%= fmtDate(m.played_at) %></div>
+  </a>
+  <% }) %>
+</div>
+
+<% if (totalPages > 1) { %>
+<div class="pagination">
+  <% if (page > 1) { %>
+  <a href="/matches?page=<%= page-1 %>&surface=<%= surface %>&result=<%= result %>"><button class="page-btn">←</button></a>
+  <% } %>
+  <% for (let i = 1; i <= totalPages; i++) { %>
+  <a href="/matches?page=<%= i %>&surface=<%= surface %>&result=<%= result %>">
+    <button class="page-btn <%= i === page ? 'active' : '' %>"><%= i %></button>
+  </a>
+  <% } %>
+  <% if (page < totalPages) { %>
+  <a href="/matches?page=<%= page+1 %>&surface=<%= surface %>&result=<%= result %>"><button class="page-btn">→</button></a>
+  <% } %>
+</div>
+<% } %>
+<% } %>
+
+<%- include('layout_bottom') %>

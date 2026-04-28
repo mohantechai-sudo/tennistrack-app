@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>League Invite — TennisTrack</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card" style="max-width:440px;">
+    <div class="auth-logo">
+      <div class="logo-circle">🏅</div>
+      <h1>TennisTrack</h1>
+      <p>League invitation</p>
+    </div>
+
+    <% if(error){ %>
+    <div class="alert alert-error"><%= error %></div>
+    <p style="text-align:center;margin-top:16px;">
+      <a href="/leagues" class="btn btn-primary btn-sm">View leagues</a>
+    </p>
+
+    <% } else if(success){ %>
+    <div class="alert alert-success"><%= success %></div>
+    <p style="text-align:center;margin-top:16px;">
+      <a href="/leagues/<%= invite.league_id %>" class="btn btn-primary">Open league →</a>
+    </p>
+
+    <% } else if(invite){ %>
+    <%
+      const CAT_LABEL = {mens_singles:"Men's Singles",mens_doubles:"Men's Doubles",womens_singles:"Women's Singles",womens_doubles:"Women's Doubles",mixed_doubles:"Mixed Doubles",open:"Open"};
+      const CAT_ICON  = {mens_singles:'👨',mens_doubles:'👬',womens_singles:'👩',womens_doubles:'👭',mixed_doubles:'👫',open:'🎾'};
+      const catKey = invite.category||'open';
+      const PLAN_LABELS = {free:'Free',pro:'Pro',premium:'Premium'};
+      const PLAN_COLORS = {free:'#6b7280',pro:'#1d4ed8',premium:'#7c3aed'};
+      const PLAN_BG     = {free:'#f3f4f6',pro:'#dbeafe',premium:'#ede9fe'};
+      const planKey = invite.plan||'free';
+    %>
+    <div style="text-align:center;margin:8px 0 20px;">
+      <div style="font-size:28px;font-weight:800;color:var(--gray-800);margin-bottom:4px;"><%= invite.league_name %></div>
+      <div style="font-size:14px;color:var(--gray-500);">
+        <strong>@<%= invite.inviter %></strong> has invited you to join this league
+      </div>
+      <div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:<%= PLAN_BG[planKey] %>;color:<%= PLAN_COLORS[planKey] %>;"><%= PLAN_LABELS[planKey] %> Plan</span>
+        <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;"><%= CAT_ICON[catKey] %> <%= CAT_LABEL[catKey] %></span>
+      </div>
+    </div>
+
+    <form method="POST" action="/league-invite/<%= invite.token %>">
+      <button type="submit" class="btn btn-primary btn-full" style="font-size:15px;padding:12px;">Join <%= invite.league_name %></button>
+    </form>
+    <p style="text-align:center;margin-top:12px;font-size:13px;color:var(--gray-400);">You're signing in as <strong>@<%= user.username %></strong></p>
+
+    <% } %>
+
+    <p style="text-align:center;margin-top:20px;font-size:13px;color:var(--gray-400);">
+      <a href="/leagues" style="color:var(--green-600);">Browse all leagues</a>
+    </p>
+  </div>
+</div>
+</body>
+</html>
