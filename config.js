@@ -1,29 +1,22 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// config.js  –  Fill in your real credentials before running
-// ─────────────────────────────────────────────────────────────────────────────
 module.exports = {
-  SESSION_SECRET: 'tennis-secret-2024-change-me',
+  SESSION_SECRET: process.env.SESSION_SECRET || 'tennis-secret-2024-change-me',
   PORT: process.env.PORT || 3000,
 
-  // ── Email (SMTP) ──────────────────────────────────────────────────────────
-  // Works with Gmail (use an App Password), Outlook, SendGrid, etc.
   EMAIL: {
-    enabled: true,                          // set false to disable email
-    host: 'smtp.gmail.com',
-    port: 587,
+    enabled: process.env.EMAIL_USER ? true : false,
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_PORT) || 587,
     secure: false,
-    user: 'your_email@gmail.com',           // ← YOUR email
-    pass: 'your_app_password',              // ← Gmail App Password (not login pw)
-    from: '"TennisTrack 🎾" <your_email@gmail.com>',
+    user: process.env.EMAIL_USER || '',
+    pass: process.env.EMAIL_PASS || '',
+    from: process.env.EMAIL_FROM || `"TennisTrack" <${process.env.EMAIL_USER}>`,
   },
 
-  // ── Twilio (SMS / WhatsApp) ───────────────────────────────────────────────
-  // Sign up free at twilio.com — WhatsApp sandbox available instantly
   TWILIO: {
-    enabled: true,                          // set false to disable SMS/WA
-    accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',  // ← from twilio.com console
-    authToken:  'your_auth_token',                    // ← from twilio.com console
-    fromSms:    '+15017122661',             // ← your Twilio phone number
-    fromWhatsApp: 'whatsapp:+14155238886', // ← Twilio WhatsApp sandbox number
+    enabled: process.env.TWILIO_SID ? true : false,
+    accountSid:   process.env.TWILIO_SID || '',
+    authToken:    process.env.TWILIO_TOKEN || '',
+    fromSms:      process.env.TWILIO_FROM_SMS || '',
+    fromWhatsApp: process.env.TWILIO_FROM_WHATSAPP || 'whatsapp:+14155238886',
   },
 };
