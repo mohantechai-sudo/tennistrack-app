@@ -9,7 +9,7 @@ const notify = require('./notifications');
 const cfg = require('./config');
 
 const app = express();
-const db = new sqlite3.Database('tennis.db');
+const db = new sqlite3.Database(path.join(__dirname, 'tennis.db'));
 
 const run = (sql, p=[]) => new Promise((res,rej) => db.run(sql,p,function(e){e?rej(e):res(this)}));
 const get = (sql, p=[]) => new Promise((res,rej) => db.get(sql,p,(e,r)=>e?rej(e):res(r)));
