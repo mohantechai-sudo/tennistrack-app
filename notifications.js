@@ -200,4 +200,29 @@ async function sendLeagueInviteEmail({ to, leagueName, inviterName, inviteUrl })
   return sendEmail({ to, subject: `You're invited to join ${leagueName} on TennisTrack`, html });
 }
 
-module.exports = { sendEmail, sendSMS, sendWhatsApp, notifyMatchScheduled, notifyMatchReminder, notifyMatchCancelled, sendPasswordResetEmail, sendClubInviteEmail, sendLeagueInviteEmail };
+async function sendPlayerWelcomeEmail({ to, fullName, username, tempPassword, leagueName, loginUrl }) {
+  const html = `
+    <div style="font-family:sans-serif;max-width:500px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+      <div style="background:#14532d;padding:24px;text-align:center;">
+        <div style="font-size:32px;">🎾</div>
+        <h1 style="color:#86efac;margin:8px 0 0;font-size:20px;">Welcome to TennisTrack!</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="font-size:15px;color:#1f2937;">Hi <strong>${fullName}</strong>,</p>
+        <p style="font-size:14px;color:#374151;">You've been added to <strong>${leagueName}</strong> on TennisTrack. Your account has been created — use the details below to sign in.</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr><td style="padding:4px 0;color:#6b7280;">Username</td><td style="padding:4px 0;font-weight:700;color:#1f2937;">${username}</td></tr>
+            <tr><td style="padding:4px 0;color:#6b7280;">Password</td><td style="padding:4px 0;font-weight:700;color:#1f2937;font-family:monospace;">${tempPassword}</td></tr>
+          </table>
+        </div>
+        <p style="font-size:13px;color:#6b7280;">Please change your password after signing in for the first time.</p>
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${loginUrl}" style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">Sign In to TennisTrack</a>
+        </div>
+      </div>
+    </div>`;
+  return sendEmail({ to, subject: `Your TennisTrack account for ${leagueName}`, html });
+}
+
+module.exports = { sendEmail, sendSMS, sendWhatsApp, notifyMatchScheduled, notifyMatchReminder, notifyMatchCancelled, sendPasswordResetEmail, sendClubInviteEmail, sendLeagueInviteEmail, sendPlayerWelcomeEmail };

@@ -28,42 +28,60 @@ const CAT_BG = {
 <% if(error){ %><div class="alert alert-error" style="margin-bottom:16px;"><%= error %></div><% } %>
 <% if(success){ %><div class="alert alert-success" style="margin-bottom:16px;"><%= success %></div><% } %>
 
-<!-- Create League -->
-<div class="card" style="margin-bottom:20px;">
-  <div class="card-header">
-    <div><div class="card-title">Create a League</div><div class="card-sub">Set up a new competition for any category</div></div>
+<!-- Page header -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <div style="font-size:20px;font-weight:700;color:var(--gray-800);">🏅 Leagues</div>
+    <div style="font-size:13px;color:var(--gray-400);margin-top:2px;"><%= leagues.length %> league<%= leagues.length!==1?'s':'' %></div>
   </div>
-  <form method="POST" action="/leagues">
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;" class="create-league-grid">
+  <button class="btn btn-primary" onclick="openLeagueModal()">+ Create League</button>
+</div>
+
+<!-- Create League Modal -->
+<div id="leagueModalBg" onclick="closeLeagueModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;padding:28px;width:100%;max-width:520px;margin:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);position:relative;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--gray-800);">Create a League</div>
+        <div style="font-size:13px;color:var(--gray-400);margin-top:2px;">Set up a new competition for any category</div>
+      </div>
+      <button onclick="closeLeagueModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--gray-400);padding:4px;line-height:1;" title="Close">✕</button>
+    </div>
+    <form method="POST" action="/leagues">
       <div class="form-group">
         <label class="form-label">League name *</label>
-        <input class="form-input" name="name" type="text" placeholder="e.g. Summer Men's Singles 2025" required/>
+        <input class="form-input" name="name" type="text" placeholder="e.g. Summer Men's Singles 2025" required autofocus/>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select class="form-input" name="category">
+            <option value="mens_singles">👨 Men's Singles</option>
+            <option value="mens_doubles">👬 Men's Doubles</option>
+            <option value="womens_singles">👩 Women's Singles</option>
+            <option value="womens_doubles">👭 Women's Doubles</option>
+            <option value="mixed_doubles">👫 Mixed Doubles</option>
+            <option value="open">🎾 Open</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select class="form-input" name="format">
+            <option value="round_robin">Round Robin</option>
+            <option value="knockout">Knockout</option>
+          </select>
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Category</label>
-        <select class="form-input" name="category">
-          <option value="mens_singles">👨 Men's Singles</option>
-          <option value="mens_doubles">👬 Men's Doubles</option>
-          <option value="womens_singles">👩 Women's Singles</option>
-          <option value="womens_doubles">👭 Women's Doubles</option>
-          <option value="mixed_doubles">👫 Mixed Doubles</option>
-          <option value="open">🎾 Open</option>
-        </select>
+        <label class="form-label">Description <span style="color:var(--gray-400);font-weight:400;">(optional)</span></label>
+        <input class="form-input" name="description" type="text" placeholder="Brief description of the league..."/>
       </div>
-      <div class="form-group">
-        <label class="form-label">Format</label>
-        <select class="form-input" name="format">
-          <option value="round_robin">Round Robin</option>
-          <option value="knockout">Knockout</option>
-        </select>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary" style="flex:1;">+ Create League</button>
+        <button type="button" onclick="closeLeagueModal()" class="btn btn-outline">Cancel</button>
       </div>
-    </div>
-    <div class="form-group" style="margin-top:12px;">
-      <label class="form-label">Description <span style="color:var(--gray-400);font-weight:400;">(optional)</span></label>
-      <input class="form-input" name="description" type="text" placeholder="Brief description of the league..."/>
-    </div>
-    <button type="submit" class="btn btn-primary" style="margin-top:8px;">+ Create League</button>
-  </form>
+    </form>
+  </div>
 </div>
 
 <!-- Category filter tabs -->
@@ -86,7 +104,7 @@ const CAT_BG = {
 <div class="card"><div class="empty-state" style="padding:40px;">
   <div class="empty-icon">🏅</div>
   <div class="empty-text">No leagues found</div>
-  <div style="font-size:13px;color:var(--gray-400);margin-top:4px;">Create one above to get started</div>
+  <div style="font-size:13px;color:var(--gray-400);margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="openLeagueModal()">+ Create League</button></div>
 </div></div>
 <% } else { %>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
@@ -106,8 +124,9 @@ const CAT_BG = {
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-left:8px;flex-shrink:0;">
         <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:<%= LPLAN_BG[lp] %>;color:<%= LPLAN_COLORS[lp] %>;"><%= LPLAN_LABELS[lp] %></span>
-        <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:<%= l.status==='active'?'var(--green-100)':'var(--gray-100)' %>;color:<%= l.status==='active'?'var(--green-700)':'var(--gray-500)' %>;">
-          <%= l.status==='active'?'Active':'Ended' %>
+        <% const _lsb=l.status==='active'?{bg:'var(--green-100)',c:'var(--green-700)',l:'Active'}:l.status==='draft'?{bg:'#fef3c7',c:'#b45309',l:'Draft'}:{bg:'var(--gray-100)',c:'var(--gray-500)',l:'Ended'}; %>
+        <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:<%= _lsb.bg %>;color:<%= _lsb.c %>;">
+          <%= _lsb.l %>
         </span>
       </div>
     </div>
@@ -145,7 +164,16 @@ const CAT_BG = {
 </div>
 <% } %>
 
-<style>
-@media(max-width:640px){.create-league-grid{grid-template-columns:1fr!important;}}
-</style>
+<script>
+function openLeagueModal(){
+  const bg = document.getElementById('leagueModalBg');
+  bg.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeLeagueModal(){
+  document.getElementById('leagueModalBg').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeLeagueModal(); });
+</script>
 <%- include('layout_bottom') %>

@@ -147,7 +147,11 @@
       <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
       <div class="match-vs" style="flex:1;min-width:0;">
         <div class="vs-text" style="font-size:13px;"><strong><%= t1label %></strong> vs <strong><%= t2label %></strong></div>
-        <div class="vs-sub"><%= fmtDate(m.played_at) %><% if(winnerLabel){ %> · 🏆 <%= winnerLabel %><% } %></div>
+        <div class="vs-sub">
+            <%= fmtDate(m.played_at) %>
+            <% if(m.venue){ %> · 📍 <%= m.venue %><% } %>
+            <% if(winnerLabel){ %> · 🏆 <%= winnerLabel %><% } %>
+          </div>
       </div>
       <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
       <span style="font-size:11px;font-weight:500;padding:2px 7px;border-radius:999px;background:<%= isD?'#ede9fe':'#dcfce7' %>;color:<%= isD?'#7c3aed':'#166534' %>;"><%= isD?'doubles':'singles' %></span>

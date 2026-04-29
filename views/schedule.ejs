@@ -17,43 +17,54 @@ function teamLabel(m, uid) {
 
 <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:20px;max-width:960px;" class="sched-grid">
 
-  <!-- Schedule Form -->
+  <!-- Left: Schedule / Propose tabs -->
   <div>
-    <div class="card">
+    <!-- Tab bar -->
+    <div style="display:flex;gap:0;border:1px solid var(--gray-200);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:16px;">
+      <button id="tab-schedule" onclick="showTab('schedule')"
+        style="flex:1;padding:9px 0;font-size:13px;font-weight:600;cursor:pointer;background:var(--green-600);color:#fff;border:none;transition:.15s;">
+        📅 Schedule
+      </button>
+      <button id="tab-propose" onclick="showTab('propose')"
+        style="flex:1;padding:9px 0;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:var(--gray-500);border:none;transition:.15s;">
+        📬 Propose Slots
+      </button>
+    </div>
+
+    <% if(error){%><div class="alert alert-error" style="margin-bottom:12px;"><%= error %></div><%}%>
+    <% if(success){%><div class="alert alert-success" style="margin-bottom:12px;">✅ <%= success %></div><%}%>
+
+    <!-- ── Schedule a Match form ── -->
+    <div id="pane-schedule" class="card">
       <div class="card-title" style="margin-bottom:16px;">📅 Schedule a Match</div>
-      <% if(error){%><div class="alert alert-error"><%= error %></div><%}%>
-      <% if(success){%><div class="alert alert-success">✅ <%= success %></div><%}%>
       <form method="POST" action="/schedule/new" id="schedForm">
 
-        <!-- Match type toggle -->
         <div class="form-group">
           <label class="form-label">Match type</label>
           <div style="display:flex;gap:0;border:1px solid var(--gray-200);border-radius:var(--radius-sm);overflow:hidden;width:fit-content;">
-            <label id="tab-singles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:var(--green-600);color:#fff;transition:.15s;">
-              <input type="radio" name="match_type" value="singles" checked style="display:none;" onchange="setType('singles')"> Singles
+            <label id="stab-singles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:var(--green-600);color:#fff;transition:.15s;">
+              <input type="radio" name="match_type" value="singles" checked style="display:none;" onchange="setType('singles','s')"> Singles
             </label>
-            <label id="tab-doubles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:var(--gray-500);transition:.15s;">
-              <input type="radio" name="match_type" value="doubles" style="display:none;" onchange="setType('doubles')"> Doubles
+            <label id="stab-doubles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:var(--gray-500);transition:.15s;">
+              <input type="radio" name="match_type" value="doubles" style="display:none;" onchange="setType('doubles','s')"> Doubles
             </label>
           </div>
         </div>
 
-        <!-- Singles: opponent only -->
-        <div id="singles-fields">
+        <div id="s-singles-fields">
           <div class="form-group">
             <label class="form-label">Opponent</label>
-            <select class="form-select" name="opponent_id" id="singleOpp">
+            <select class="form-select" name="opponent_id" id="s-singleOpp" required>
               <option value="">Select opponent...</option>
               <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
             </select>
           </div>
         </div>
 
-        <!-- Doubles: 3 extra selectors -->
-        <div id="doubles-fields" style="display:none;">
+        <div id="s-doubles-fields" style="display:none;">
           <div class="form-group">
             <label class="form-label">Your partner</label>
-            <select class="form-select" name="partner_id" id="partnerSel" disabled>
+            <select class="form-select" name="partner_id" id="s-partnerSel" disabled>
               <option value="">Select your partner...</option>
               <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
             </select>
@@ -61,14 +72,14 @@ function teamLabel(m, uid) {
           <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px;">Opponent team</div>
           <div class="form-group">
             <label class="form-label">Opponent 1</label>
-            <select class="form-select" name="opponent_id" id="doubleOpp1" disabled>
+            <select class="form-select" name="opponent_id" id="s-doubleOpp1" disabled>
               <option value="">Select opponent 1...</option>
               <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Opponent 2</label>
-            <select class="form-select" name="opponent_partner_id" id="doubleOpp2" disabled>
+            <select class="form-select" name="opponent_partner_id" id="s-doubleOpp2" disabled>
               <option value="">Select opponent 2...</option>
               <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
             </select>
@@ -108,18 +119,190 @@ function teamLabel(m, uid) {
           <label class="form-label">Notes</label>
           <textarea class="form-textarea" name="notes" placeholder="Any notes..."></textarea>
         </div>
-        <div class="notif-info">
-          <div style="font-size:12px;color:var(--gray-600);background:var(--green-50);border:1px solid var(--green-200);border-radius:6px;padding:10px 12px;">
-            📨 All players will receive notifications when scheduled, and a <strong>1-hour reminder</strong> before the match.
+        <div style="font-size:12px;color:var(--gray-600);background:var(--green-50);border:1px solid var(--green-200);border-radius:6px;padding:10px 12px;margin-bottom:14px;">
+          📨 All players will receive notifications when scheduled, and a <strong>1-hour reminder</strong> before the match.
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">📅 Schedule & Notify</button>
+      </form>
+    </div>
+
+    <!-- ── Propose Slots form ── -->
+    <div id="pane-propose" class="card" style="display:none;">
+      <div class="card-title" style="margin-bottom:4px;">📬 Propose Time Slots</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:16px;">Offer 2–4 options — your opponent picks one to confirm.</div>
+      <form method="POST" action="/proposals/new" id="proposeForm">
+
+        <div class="form-group">
+          <label class="form-label">Match type</label>
+          <div style="display:flex;gap:0;border:1px solid var(--gray-200);border-radius:var(--radius-sm);overflow:hidden;width:fit-content;">
+            <label id="ptab-singles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:var(--green-600);color:#fff;transition:.15s;">
+              <input type="radio" name="match_type" value="singles" checked style="display:none;" onchange="setType('singles','p')"> Singles
+            </label>
+            <label id="ptab-doubles" style="padding:7px 18px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:var(--gray-500);transition:.15s;">
+              <input type="radio" name="match_type" value="doubles" style="display:none;" onchange="setType('doubles','p')"> Doubles
+            </label>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary" style="margin-top:14px;width:100%;">📅 Schedule & Notify</button>
+
+        <div id="p-singles-fields">
+          <div class="form-group">
+            <label class="form-label">Opponent</label>
+            <select class="form-select" name="opponent_id" id="p-singleOpp" required>
+              <option value="">Select opponent...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+        </div>
+
+        <div id="p-doubles-fields" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Your partner</label>
+            <select class="form-select" name="partner_id" id="p-partnerSel" disabled>
+              <option value="">Select your partner...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px;">Opponent team</div>
+          <div class="form-group">
+            <label class="form-label">Opponent 1</label>
+            <select class="form-select" name="opponent_id" id="p-doubleOpp1" disabled>
+              <option value="">Select opponent 1...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opponent 2</label>
+            <select class="form-select" name="opponent_partner_id" id="p-doubleOpp2" disabled>
+              <option value="">Select opponent 2...</option>
+              <% players.forEach(p=>{%><option value="<%= p.id %>"><%= p.full_name||p.username %> (@<%= p.username %>)</option><%})%>
+            </select>
+          </div>
+        </div>
+
+        <!-- Time slot picker -->
+        <div class="form-group">
+          <label class="form-label" style="margin-bottom:8px;">Available time slots <span style="color:#dc2626;">*</span></label>
+          <div id="slot-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          <button type="button" onclick="addSlot()" id="add-slot-btn"
+            style="margin-top:8px;font-size:13px;color:var(--green-600);background:none;border:1.5px dashed var(--green-300);border-radius:6px;padding:7px 14px;cursor:pointer;width:100%;font-weight:500;transition:.15s;"
+            onmouseover="this.style.background='var(--green-50)'" onmouseout="this.style.background='none'">
+            + Add time slot
+          </button>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">Add up to 4 options. Your opponent will choose one.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Venue / Location</label>
+          <input class="form-input" name="venue" type="text" placeholder="e.g. Central Tennis Club, Court 3"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Surface</label>
+            <select class="form-select" name="surface">
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+              <option value="indoor">Indoor</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Format</label>
+            <select class="form-select" name="format">
+              <option value="best_of_3">Best of 3</option>
+              <option value="best_of_5">Best of 5</option>
+              <option value="best_of_1">Best of 1</option>
+              <option value="practice">Practice</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" name="notes" placeholder="Any notes for your opponent..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" onclick="return validatePropose()">📬 Send Proposal</button>
       </form>
     </div>
   </div>
 
-  <!-- Scheduled matches list -->
-  <div>
+  <!-- Right: Incoming proposals + scheduled matches -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Incoming proposals -->
+    <% if(incoming && incoming.length > 0){ %>
+    <div class="card" style="border-top:3px solid #7c3aed;">
+      <div class="card-header" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="card-title">📬 Match Proposals</div>
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#ede9fe;color:#7c3aed;"><%= incoming.length %> pending</span>
+        </div>
+      </div>
+      <% incoming.forEach(p=>{ %>
+      <div style="border:1.5px solid #e9d5ff;border-radius:10px;padding:14px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+          <div>
+            <div style="font-weight:600;color:var(--gray-800);font-size:14px;">
+              <%= p.proposer_full||p.proposer_name %> <span style="color:var(--gray-400);font-weight:400;">wants to play</span>
+            </div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">
+              <%= p.match_type==='doubles'?'Doubles':'Singles' %>
+              <% if(p.venue){ %> · <%= p.venue %><% } %>
+              · <%= p.surface %> · <%= p.format.replace(/_/g,' ') %>
+            </div>
+          </div>
+          <form method="POST" action="/proposals/<%= p.id %>/decline" style="margin:0;">
+            <button type="submit" style="font-size:12px;color:#dc2626;background:none;border:none;cursor:pointer;padding:0;font-weight:500;" onclick="return confirm('Decline this proposal?')">✕ Decline</button>
+          </form>
+        </div>
+        <% if(p.notes){ %><div style="font-size:12px;color:var(--gray-500);background:var(--gray-50);border-radius:6px;padding:6px 10px;margin-bottom:10px;"><%= p.notes %></div><% } %>
+        <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Choose a slot to accept:</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <% p.slots.forEach(slot=>{ %>
+          <form method="POST" action="/proposals/<%= p.id %>/accept" style="margin:0;">
+            <input type="hidden" name="slot_id" value="<%= slot.id %>"/>
+            <button type="submit"
+              style="width:100%;text-align:left;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;align-items:center;transition:.15s;"
+              onmouseover="this.style.borderColor='var(--green-500)';this.style.background='var(--green-50)'"
+              onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
+              <span style="font-weight:500;color:var(--gray-800);">📅 <%= fmtDT(slot.proposed_at) %></span>
+              <span style="font-size:12px;font-weight:600;color:var(--green-600);flex-shrink:0;margin-left:8px;">Accept ✓</span>
+            </button>
+          </form>
+          <% }) %>
+        </div>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <!-- Outgoing proposals (pending only) -->
+    <% const pendingOut = (outgoing||[]).filter(p=>p.status==='pending'); %>
+    <% if(pendingOut.length > 0){ %>
+    <div class="card">
+      <div class="card-header" style="margin-bottom:12px;">
+        <div class="card-title">📤 Sent Proposals</div>
+        <span style="font-size:12px;color:var(--gray-400);"><%= pendingOut.length %> awaiting response</span>
+      </div>
+      <% pendingOut.forEach(p=>{ %>
+      <div style="border:1.5px solid var(--gray-200);border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:500;color:var(--gray-800);font-size:13px;">
+            To: <strong><%= p.opponent_full||p.opponent_name %></strong>
+            <span style="font-size:11px;font-weight:600;padding:2px 6px;border-radius:999px;background:#fef3c7;color:#92400e;margin-left:6px;">Pending</span>
+          </div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:3px;">
+            <%= p.slots.length %> slot<%= p.slots.length!==1?'s':'' %> offered
+            <% if(p.slots[0]){ %> · first: <%= fmtDT(p.slots[0].proposed_at) %><% } %>
+          </div>
+        </div>
+        <form method="POST" action="/proposals/<%= p.id %>/cancel" style="margin:0;flex-shrink:0;">
+          <button type="submit" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fecaca;font-size:12px;" onclick="return confirm('Withdraw this proposal?')">Withdraw</button>
+        </form>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <!-- Scheduled matches -->
     <div class="card">
       <div class="card-title" style="margin-bottom:14px;">Your Matches</div>
       <% const upcoming = scheduled.filter(m=>m.status==='scheduled'&&new Date(m.scheduled_at)>now);
@@ -190,21 +373,58 @@ function teamLabel(m, uid) {
 </style>
 
 <script>
-function setType(t) {
+const minDT = new Date().toISOString().slice(0,16);
+let slotCount = 0;
+
+function showTab(tab) {
+  const isPropose = tab === 'propose';
+  document.getElementById('pane-schedule').style.display = isPropose ? 'none' : 'block';
+  document.getElementById('pane-propose').style.display  = isPropose ? 'block' : 'none';
+  document.getElementById('tab-schedule').style.background = isPropose ? '#fff' : 'var(--green-600)';
+  document.getElementById('tab-schedule').style.color = isPropose ? 'var(--gray-500)' : '#fff';
+  document.getElementById('tab-propose').style.background  = isPropose ? 'var(--green-600)' : '#fff';
+  document.getElementById('tab-propose').style.color  = isPropose ? '#fff' : 'var(--gray-500)';
+  if (isPropose && slotCount === 0) addSlot();
+}
+
+function addSlot() {
+  if (slotCount >= 4) return;
+  slotCount++;
+  const list = document.getElementById('slot-list');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  const inp = document.createElement('input');
+  inp.type = 'datetime-local'; inp.name = 'slots'; inp.min = minDT;
+  inp.className = 'form-input'; inp.style.flex = '1'; inp.required = true;
+  const rm = document.createElement('button');
+  rm.type = 'button'; rm.textContent = '✕';
+  rm.style.cssText = 'background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:16px;padding:4px;flex-shrink:0;';
+  rm.onclick = () => { row.remove(); slotCount--; document.getElementById('add-slot-btn').style.display = slotCount >= 4 ? 'none' : 'block'; };
+  row.appendChild(inp); row.appendChild(rm);
+  list.appendChild(row);
+  document.getElementById('add-slot-btn').style.display = slotCount >= 4 ? 'none' : 'block';
+}
+
+function validatePropose() {
+  const slots = document.querySelectorAll('#slot-list input[name="slots"]');
+  if (slots.length === 0) { alert('Add at least one time slot.'); return false; }
+  return true;
+}
+
+function setType(t, prefix) {
   const isD = t === 'doubles';
-  document.getElementById('singles-fields').style.display = isD ? 'none' : 'block';
-  document.getElementById('doubles-fields').style.display = isD ? 'block' : 'none';
-  // single opponent field required only for singles
-  document.getElementById('singleOpp').required  = !isD;
-  document.getElementById('singleOpp').disabled  = isD;
-  document.getElementById('partnerSel').disabled = !isD;
-  document.getElementById('doubleOpp1').disabled = !isD;
-  document.getElementById('doubleOpp2').disabled = !isD;
-  // tab styling
-  document.getElementById('tab-singles').style.background = isD ? '#fff' : 'var(--green-600)';
-  document.getElementById('tab-singles').style.color      = isD ? 'var(--gray-500)' : '#fff';
-  document.getElementById('tab-doubles').style.background = isD ? 'var(--green-600)' : '#fff';
-  document.getElementById('tab-doubles').style.color      = isD ? '#fff' : 'var(--gray-500)';
+  document.getElementById(prefix+'-singles-fields').style.display = isD ? 'none' : 'block';
+  document.getElementById(prefix+'-doubles-fields').style.display = isD ? 'block' : 'none';
+  document.getElementById(prefix==='s'?'s-singleOpp':'p-singleOpp').required  = !isD;
+  document.getElementById(prefix==='s'?'s-singleOpp':'p-singleOpp').disabled  = isD;
+  document.getElementById(prefix==='s'?'s-partnerSel':'p-partnerSel').disabled = !isD;
+  document.getElementById(prefix==='s'?'s-doubleOpp1':'p-doubleOpp1').disabled = !isD;
+  document.getElementById(prefix==='s'?'s-doubleOpp2':'p-doubleOpp2').disabled = !isD;
+  const pre = prefix === 's' ? 'stab' : 'ptab';
+  document.getElementById(pre+'-singles').style.background = isD ? '#fff' : 'var(--green-600)';
+  document.getElementById(pre+'-singles').style.color = isD ? 'var(--gray-500)' : '#fff';
+  document.getElementById(pre+'-doubles').style.background = isD ? 'var(--green-600)' : '#fff';
+  document.getElementById(pre+'-doubles').style.color = isD ? '#fff' : 'var(--gray-500)';
 }
 </script>
 

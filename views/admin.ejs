@@ -1,20 +1,21 @@
 <%
 function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
 function fmtDT(d){return new Date(d).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
-function outcome(m,uid){if(!m.winner_id)return'nr';return m.winner_id===uid?'win':'loss';}
+function toDatetimeLocal(d){if(!d)return'';const dt=new Date(d);dt.setMinutes(dt.getMinutes()-dt.getTimezoneOffset());return dt.toISOString().slice(0,16);}
 function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
 %>
 <%- include('layout_top',{title:'Admin Panel',page:'admin',user}) %>
 
+<!-- Summary -->
 <div style="margin-bottom:24px;">
   <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);">
-    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value green"><%= users.length %></div></div>
+    <div class="stat-card"><div class="stat-label">Total Players</div><div class="stat-value green"><%= users.length %></div></div>
     <div class="stat-card"><div class="stat-label">Total Matches</div><div class="stat-value"><%= matches.length %></div></div>
     <div class="stat-card"><div class="stat-label">Scheduled</div><div class="stat-value"><%= scheduled.filter(s=>s.status==='scheduled').length %></div></div>
   </div>
 </div>
 
-<!-- Users -->
+<!-- ── Players ─────────────────────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:20px;">
   <div class="card-title" style="margin-bottom:14px;">👥 All Players</div>
   <div style="overflow-x:auto;">
@@ -47,12 +48,17 @@ function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:
             <% } %>
           </td>
           <td style="padding:10px 12px;">
-            <div style="display:flex;gap:6px;">
+            <div style="display:flex;gap:6px;align-items:center;">
+              <!-- Pencil edit -->
+              <button class="btn btn-outline btn-sm" title="Edit player"
+                onclick="openUserEdit(<%= u.id %>,<%= JSON.stringify(u.full_name||'') %>,<%= JSON.stringify(u.email) %>,<%= JSON.stringify(u.phone||'') %>)">
+                ✏️
+              </button>
               <% if(u.id!==uid){ %>
               <form method="POST" action="/admin/users/<%= u.id %>/toggle-admin">
                 <button type="submit" class="btn btn-outline btn-sm"><%= u.is_admin?'Remove Admin':'Make Admin' %></button>
               </form>
-              <form method="POST" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Delete user @<%= u.username %>? This cannot be undone.')">
+              <form method="POST" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Delete @<%= u.username %>? Cannot be undone.')">
                 <button type="submit" class="btn btn-danger btn-sm">Delete</button>
               </form>
               <% } else { %>
@@ -67,18 +73,19 @@ function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:
   </div>
 </div>
 
-<!-- Matches — admin can delete -->
+<!-- ── Matches ────────────────────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:20px;">
-  <div class="card-title" style="margin-bottom:14px;">🏆 All Matches <span style="font-size:12px;color:var(--gray-400);font-weight:400;">(admin can delete)</span></div>
+  <div class="card-title" style="margin-bottom:14px;">🏆 All Matches</div>
   <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
         <tr style="border-bottom:2px solid var(--gray-200);">
           <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Players</th>
           <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Score</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Winner</th>
           <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Surface</th>
           <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Date</th>
-          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Action</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gray-500);font-weight:500;">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -86,17 +93,27 @@ function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:
         <tr style="border-bottom:1px solid var(--gray-100);">
           <td style="padding:10px 12px;">
             <span style="font-weight:500;">@<%= m.p1name %></span>
-            <span style="color:var(--gray-400);margin:0 6px;">vs</span>
+            <span style="color:var(--gray-400);margin:0 5px;">vs</span>
             <span style="font-weight:500;">@<%= m.p2name %></span>
-            <% if(m.winnername){ %><span style="font-size:11px;color:var(--green-700);margin-left:6px;">🏆 <%= m.winnername %></span><% } %>
           </td>
           <td style="padding:10px 12px;font-family:monospace;font-weight:600;"><%= m.score %></td>
+          <td style="padding:10px 12px;">
+            <% if(m.winnername){ %><span style="font-size:12px;color:var(--green-700);font-weight:600;">🏆 @<%= m.winnername %></span>
+            <% } else { %><span style="color:var(--gray-400);font-size:12px;">—</span><% } %>
+          </td>
           <td style="padding:10px 12px;"><span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span></td>
           <td style="padding:10px 12px;color:var(--gray-500);"><%= fmtDate(m.played_at) %></td>
           <td style="padding:10px 12px;">
-            <form method="POST" action="/matches/<%= m.id %>/delete" onsubmit="return confirm('Delete this match? Cannot be undone.')">
-              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-            </form>
+            <div style="display:flex;gap:6px;">
+              <!-- Pencil edit -->
+              <button class="btn btn-outline btn-sm" title="Edit match"
+                onclick="openMatchEdit(<%= m.id %>,<%= JSON.stringify(m.score||'') %>,<%= m.player1_id %>,<%= JSON.stringify(m.p1name) %>,<%= m.player2_id %>,<%= JSON.stringify(m.p2name) %>,<%= m.winner_id||'null' %>,<%= JSON.stringify(toDatetimeLocal(m.played_at)) %>)">
+                ✏️
+              </button>
+              <form method="POST" action="/matches/<%= m.id %>/delete" onsubmit="return confirm('Delete this match?')">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         <% }) %>
@@ -105,7 +122,7 @@ function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:
   </div>
 </div>
 
-<!-- Scheduled matches -->
+<!-- ── Scheduled matches ──────────────────────────────────────────────── -->
 <div class="card">
   <div class="card-title" style="margin-bottom:14px;">📅 Scheduled Matches</div>
   <div style="overflow-x:auto;">
@@ -143,5 +160,106 @@ function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:
     </table>
   </div>
 </div>
+
+<!-- ══ Edit Player Modal ══════════════════════════════════════════════ -->
+<div id="userModalBg" onclick="closeUserEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;padding:28px;width:100%;max-width:440px;margin:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="font-size:17px;font-weight:700;color:var(--gray-800);">✏️ Edit Player</div>
+      <button onclick="closeUserEdit()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--gray-400);padding:4px;line-height:1;">✕</button>
+    </div>
+    <form id="editUserForm" method="POST">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" id="eu_name" name="full_name" type="text" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="eu_email" name="email" type="email" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="eu_phone" name="phone" type="tel" placeholder="Optional"/>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary" style="flex:1;">Save Changes</button>
+        <button type="button" onclick="closeUserEdit()" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ Edit Match Modal ═══════════════════════════════════════════════ -->
+<div id="matchModalBg" onclick="closeMatchEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;padding:28px;width:100%;max-width:440px;margin:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="font-size:17px;font-weight:700;color:var(--gray-800);">✏️ Edit Match</div>
+      <button onclick="closeMatchEdit()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--gray-400);padding:4px;line-height:1;">✕</button>
+    </div>
+    <form id="editMatchForm" method="POST">
+      <div class="form-group">
+        <label class="form-label">Score</label>
+        <input class="form-input" id="em_score" name="score" type="text" placeholder="e.g. 6-3, 7-5" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Winner</label>
+        <select class="form-input" id="em_winner" name="winner_id">
+          <option value="">No result / walkover</option>
+          <option id="em_p1opt" value=""></option>
+          <option id="em_p2opt" value=""></option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date & Time</label>
+        <input class="form-input" id="em_date" name="played_at" type="datetime-local" required/>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary" style="flex:1;">Save Changes</button>
+        <button type="button" onclick="closeMatchEdit()" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openUserEdit(id, name, email, phone) {
+  document.getElementById('editUserForm').action = '/admin/users/' + id + '/edit';
+  document.getElementById('eu_name').value  = name;
+  document.getElementById('eu_email').value = email;
+  document.getElementById('eu_phone').value = phone;
+  const bg = document.getElementById('userModalBg');
+  bg.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.getElementById('eu_name').focus();
+}
+function closeUserEdit() {
+  document.getElementById('userModalBg').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function openMatchEdit(id, score, p1id, p1name, p2id, p2name, winnerId, playedAt) {
+  document.getElementById('editMatchForm').action = '/admin/matches/' + id + '/edit';
+  document.getElementById('em_score').value  = score;
+  document.getElementById('em_date').value   = playedAt;
+  const p1opt = document.getElementById('em_p1opt');
+  const p2opt = document.getElementById('em_p2opt');
+  p1opt.value = p1id; p1opt.textContent = '@' + p1name;
+  p2opt.value = p2id; p2opt.textContent = '@' + p2name;
+  const sel = document.getElementById('em_winner');
+  sel.value = winnerId === null ? '' : String(winnerId);
+  const bg = document.getElementById('matchModalBg');
+  bg.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.getElementById('em_score').focus();
+}
+function closeMatchEdit() {
+  document.getElementById('matchModalBg').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeUserEdit(); closeMatchEdit(); }
+});
+</script>
 
 <%- include('layout_bottom') %>

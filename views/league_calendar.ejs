@@ -1,0 +1,581 @@
+<%
+  const isDoublesCat = ['mens_doubles','womens_doubles','mixed_doubles'].includes(league.category||'open');
+  const CAT_LABEL = {mens_singles:"Men's Singles",mens_doubles:"Men's Doubles",womens_singles:"Women's Singles",womens_doubles:"Women's Doubles",mixed_doubles:"Mixed Doubles",open:"Open"};
+  function fmtDT(d){ return new Date(d).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+  function fmtDate(d){ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+
+  // Build calendar event objects
+  const calEvents = [];
+
+  // Played league matches
+  lmatches.filter(m=>m.played_at).forEach(m=>{
+    const onT1 = m.player1_id===uid || m.player1_partner_id===uid;
+    const oppName = onT1 ? (m.p2full||m.p2name) : (m.p1full||m.p1name);
+    calEvents.push({
+      id:'match-'+m.id, type:'match',
+      date:m.played_at.slice(0,10),
+      time:m.played_at.length>10?m.played_at.slice(11,16):'',
+      label:'vs '+oppName, color:'#536D33',
+      score:m.score||'', winner:m.winner_id,
+      myWin: m.winner_id && (m.winner_id===m.player1_id||m.winner_id===m.player1_partner_id)===(m.player1_id===uid||m.player1_partner_id===uid),
+      oppName, surface:m.surface, venue:m.venue||'',
+      p1name:m.p1full||m.p1name, p2name:m.p2full||m.p2name,
+      p1partner:m.p1partnername||'', p2partner:m.p2partnername||''
+    });
+  });
+
+  // Accepted proposals (confirmed, not yet played)
+  proposals.accepted.forEach(p=>{
+    if(!p.accepted_at) return;
+    const iAmProposer = p.proposer_id===uid;
+    const oppName = iAmProposer?(p.opponent_full||p.opponent_name):(p.proposer_full||p.proposer_name);
+    calEvents.push({
+      id:'sched-'+p.id, type:'scheduled',
+      date:p.accepted_at.slice(0,10),
+      time:p.accepted_at.length>10?p.accepted_at.slice(11,16):'',
+      label:'vs '+oppName, color:'#1d4ed8',
+      proposalId:p.id, oppName,
+      venue:p.venue||'', surface:p.surface,
+      iAmProposer, proposerId:p.proposer_id, opponentId:p.opponent_id
+    });
+  });
+
+  // Incoming proposals: one pill per slot
+  proposals.incoming.forEach(p=>{
+    p.slots.forEach(s=>{
+      calEvents.push({
+        id:'inc-'+p.id+'-'+s.id, type:'incoming',
+        date:s.proposed_at.slice(0,10),
+        time:s.proposed_at.length>10?s.proposed_at.slice(11,16):'',
+        label:'📬 '+(p.proposer_full||p.proposer_name), color:'#7c3aed',
+        proposalId:p.id, slotId:s.id,
+        oppName:p.proposer_full||p.proposer_name,
+        venue:p.venue||'', surface:p.surface, notes:p.notes||'',
+        allSlots:p.slots.map(sl=>({id:sl.id,dt:sl.proposed_at}))
+      });
+    });
+  });
+
+  // Outgoing proposals: one pill per slot
+  proposals.outgoing.forEach(p=>{
+    p.slots.forEach(s=>{
+      calEvents.push({
+        id:'out-'+p.id+'-'+s.id, type:'outgoing',
+        date:s.proposed_at.slice(0,10),
+        time:s.proposed_at.length>10?s.proposed_at.slice(11,16):'',
+        label:'📤 '+(p.opponent_full||p.opponent_name), color:'#d97706',
+        proposalId:p.id, slotId:s.id,
+        oppName:p.opponent_full||p.opponent_name,
+        venue:p.venue||'', surface:p.surface, notes:p.notes||'',
+        allSlots:p.slots.map(sl=>({id:sl.id,dt:sl.proposed_at}))
+      });
+    });
+  });
+%>
+<%- include('layout_top',{title:league.name+' — Calendar',page:'leagues',user}) %>
+
+<!-- Breadcrumb header -->
+<div class="card" style="margin-bottom:16px;padding:14px 20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:2px;">
+        <a href="/leagues" style="color:var(--gray-400);text-decoration:none;">Leagues</a>
+        <span style="margin:0 6px;">›</span>
+        <a href="/leagues/<%= league.id %>" style="color:var(--gray-400);text-decoration:none;"><%= league.name %></a>
+        <span style="margin:0 6px;">›</span>Calendar
+      </div>
+      <div style="font-size:18px;font-weight:700;color:var(--gray-800);">📅 Match Calendar</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="/leagues/<%= league.id %>" class="btn btn-outline btn-sm">← League</a>
+      <a href="/leagues/<%= league.id %>/dashboard" class="btn btn-outline btn-sm">📊 Dashboard</a>
+      <% if(isMember && league.status==='active'){ %>
+      <button class="btn btn-primary btn-sm" onclick="openProposalModal()">+ New Proposal</button>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<% if(error){ %><div class="alert alert-error" style="margin-bottom:12px;"><%= error %></div><% } %>
+<% if(success){ %><div class="alert alert-success" style="margin-bottom:12px;">✅ <%= success %></div><% } %>
+
+<!-- Main layout: calendar + sidebar -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;" class="cal-layout">
+
+  <!-- ── Calendar ── -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    <!-- Month navigation -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--gray-100);">
+      <button id="cal-prev" onclick="calNav(-1)"
+        style="background:none;border:1.5px solid var(--gray-200);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:.15s;"
+        onmouseover="this.style.borderColor='var(--green-400)'" onmouseout="this.style.borderColor='var(--gray-200)'">‹</button>
+      <div style="text-align:center;">
+        <div id="cal-month-label" style="font-size:17px;font-weight:700;color:var(--gray-800);"></div>
+        <div id="cal-year-label" style="font-size:12px;color:var(--gray-400);"></div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="calToday()"
+          style="background:none;border:1.5px solid var(--gray-200);border-radius:8px;padding:0 12px;height:34px;font-size:12px;font-weight:600;cursor:pointer;color:var(--gray-600);transition:.15s;"
+          onmouseover="this.style.borderColor='var(--green-400)'" onmouseout="this.style.borderColor='var(--gray-200)'">Today</button>
+        <button id="cal-next" onclick="calNav(1)"
+          style="background:none;border:1.5px solid var(--gray-200);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:.15s;"
+          onmouseover="this.style.borderColor='var(--green-400)'" onmouseout="this.style.borderColor='var(--gray-200)'">›</button>
+      </div>
+    </div>
+
+    <!-- Day headers -->
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--gray-100);">
+      <% ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d=>{ %>
+      <div style="padding:8px 4px;text-align:center;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;"><%= d %></div>
+      <% }) %>
+    </div>
+
+    <!-- Calendar grid (rendered by JS) -->
+    <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);"></div>
+
+    <!-- Legend -->
+    <div style="display:flex;gap:14px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--gray-100);background:var(--gray-50);">
+      <span style="font-size:11px;display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#536D33;display:inline-block;"></span>Played</span>
+      <span style="font-size:11px;display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#1d4ed8;display:inline-block;"></span>Confirmed</span>
+      <span style="font-size:11px;display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#7c3aed;display:inline-block;"></span>Awaiting You</span>
+      <span style="font-size:11px;display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#d97706;display:inline-block;"></span>Sent</span>
+    </div>
+  </div>
+
+  <!-- ── Sidebar ── -->
+  <div style="display:flex;flex-direction:column;gap:14px;">
+
+    <!-- Needs action: incoming proposals -->
+    <% if(proposals.incoming.length > 0){ %>
+    <div class="card" style="border-top:3px solid #7c3aed;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div class="card-title" style="margin:0;">📬 Choose a Slot</div>
+        <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;background:#ede9fe;color:#7c3aed;"><%= proposals.incoming.length %></span>
+      </div>
+      <% proposals.incoming.forEach(p=>{ %>
+      <div style="border:1.5px solid #e9d5ff;border-radius:10px;padding:12px;margin-bottom:10px;">
+        <div style="font-weight:600;color:var(--gray-800);font-size:13px;margin-bottom:2px;"><%= p.proposer_full||p.proposer_name %></div>
+        <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;"><%= p.venue||'No venue' %> · <%= p.surface %></div>
+        <% if(p.notes){ %><div style="font-size:11px;color:var(--gray-500);background:var(--gray-50);border-radius:5px;padding:5px 8px;margin-bottom:8px;"><%= p.notes %></div><% } %>
+        <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;">
+          <% p.slots.forEach(s=>{ %>
+          <form method="POST" action="/leagues/<%= league.id %>/proposals/<%= p.id %>/accept" style="margin:0;">
+            <input type="hidden" name="slot_id" value="<%= s.id %>"/>
+            <button type="submit"
+              style="width:100%;text-align:left;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:7px;background:#fff;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;align-items:center;transition:.15s;"
+              onmouseover="this.style.borderColor='#7c3aed';this.style.background='#f5f3ff'"
+              onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
+              <span style="font-weight:500;color:var(--gray-800);">📅 <%= fmtDT(s.proposed_at) %></span>
+              <span style="font-size:11px;color:#7c3aed;font-weight:700;flex-shrink:0;">Accept ✓</span>
+            </button>
+          </form>
+          <% }) %>
+        </div>
+        <form method="POST" action="/leagues/<%= league.id %>/proposals/<%= p.id %>/decline" style="margin:0;">
+          <button type="submit" style="width:100%;padding:6px;background:none;border:1px solid #fecaca;border-radius:6px;color:#dc2626;font-size:12px;cursor:pointer;font-weight:500;" onclick="return confirm('Decline this proposal?')">✕ Decline</button>
+        </form>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <!-- Upcoming confirmed matches -->
+    <% const futureAccepted = proposals.accepted.filter(p=>p.accepted_at && new Date(p.accepted_at)>new Date()); %>
+    <% if(futureAccepted.length > 0){ %>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">📌 Upcoming Confirmed</div>
+      <% futureAccepted.forEach(p=>{ const iAmProposer=p.proposer_id===uid; const opp=iAmProposer?(p.opponent_full||p.opponent_name):(p.proposer_full||p.proposer_name); %>
+      <div style="padding:10px 0;border-bottom:1px solid var(--gray-100);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--gray-800);">vs <%= opp %></div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">📅 <%= fmtDT(p.accepted_at) %></div>
+          <% if(p.venue){ %><div style="font-size:11px;color:var(--gray-400);">📍 <%= p.venue %></div><% } %>
+        </div>
+        <% if(iAmProposer){ %>
+        <form method="POST" action="/leagues/<%= league.id %>/proposals/<%= p.id %>/cancel" style="margin:0;">
+          <input type="hidden" name="reschedule" value="1"/>
+          <button type="submit" class="btn btn-outline btn-sm" style="font-size:11px;color:#d97706;border-color:#fde68a;" onclick="return confirm('Cancel this match? You can then propose new times.')">Reschedule</button>
+        </form>
+        <% } %>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <!-- Outgoing pending proposals -->
+    <% if(proposals.outgoing.length > 0){ %>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">📤 Sent Proposals</div>
+      <% proposals.outgoing.forEach(p=>{ %>
+      <div style="padding:10px 0;border-bottom:1px solid var(--gray-100);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--gray-800);">To: <%= p.opponent_full||p.opponent_name %></div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:2px;"><%= p.slots.length %> slot<%= p.slots.length!==1?'s':'' %> offered</div>
+          <% if(p.slots[0]){ %><div style="font-size:11px;color:var(--gray-400);">First: <%= fmtDT(p.slots[0].proposed_at) %></div><% } %>
+        </div>
+        <form method="POST" action="/leagues/<%= league.id %>/proposals/<%= p.id %>/cancel" style="margin:0;">
+          <button type="submit" class="btn btn-outline btn-sm" style="font-size:11px;color:#dc2626;border-color:#fecaca;" onclick="return confirm('Withdraw this proposal?')">Withdraw</button>
+        </form>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <% if(proposals.incoming.length===0 && proposals.outgoing.length===0 && futureAccepted.length===0 && isMember && league.status==='active'){ %>
+    <div class="card" style="text-align:center;padding:28px;">
+      <div style="font-size:28px;margin-bottom:8px;">📬</div>
+      <div style="font-size:14px;font-weight:600;color:var(--gray-600);">No pending proposals</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-top:4px;margin-bottom:16px;">Propose a match time to your opponent</div>
+      <button class="btn btn-primary btn-sm" onclick="openProposalModal()">+ New Proposal</button>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<!-- ── Event Detail Modal ── -->
+<div id="modal-event" onclick="if(event.target===this)closeModals()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:16px;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;">
+    <div id="modal-event-header" style="padding:20px 24px 16px;border-bottom:1px solid var(--gray-100);display:flex;justify-content:space-between;align-items:center;">
+      <div id="modal-event-title" style="font-size:16px;font-weight:700;color:var(--gray-800);"></div>
+      <button onclick="closeModals()" style="background:none;border:none;font-size:20px;color:var(--gray-400);cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="modal-event-body" style="padding:20px 24px;max-height:70vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ── New Proposal Modal ── -->
+<% if(isMember && league.status==='active'){ %>
+<div id="modal-proposal" onclick="if(event.target===this)closeModals()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:16px;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="padding:20px 24px 16px;border-bottom:1px solid var(--gray-100);display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--gray-800);">📬 New Match Proposal</div>
+        <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Offer time slots — your opponent picks one</div>
+      </div>
+      <button onclick="closeModals()" style="background:none;border:none;font-size:20px;color:var(--gray-400);cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="padding:20px 24px;">
+      <form method="POST" action="/leagues/<%= league.id %>/proposals/new" id="propose-form">
+
+        <div class="form-group">
+          <label class="form-label">Opponent <span style="color:#dc2626;">*</span></label>
+          <select class="form-input" name="opponent_id" id="prop-opp" required>
+            <option value="">— Select opponent —</option>
+            <% const _isDoubles = ['mens_doubles','womens_doubles','mixed_doubles'].includes(league.category||''); %>
+            <% if (_isDoubles && teams && teams.length > 0) { %>
+              <% const _oppTeams = proposeOpponent ? teams.filter(t=>String(t.player1_id)===String(proposeOpponent)) : teams; %>
+              <% _oppTeams.forEach(t=>{ %>
+              <option value="<%= t.player1_id %>"><%= t.name || ((t.p1full||t.p1name) + ' & ' + (t.p2full||t.p2name)) %> (<%= (t.p1full||t.p1name) %> &amp; <%= (t.p2full||t.p2name) %>)</option>
+              <% }) %>
+            <% } else { %>
+              <% const _oppMembers = proposeOpponent ? members.filter(m=>String(m.id)===String(proposeOpponent)) : members.filter(m=>m.id!==uid); %>
+              <% _oppMembers.forEach(m=>{ %>
+              <option value="<%= m.id %>"><%= m.full_name||m.username %> (@<%= m.username %>)</option>
+              <% }) %>
+            <% } %>
+          </select>
+        </div>
+
+        <!-- Time slot builder -->
+        <div class="form-group">
+          <label class="form-label">Available slots <span style="color:#dc2626;">*</span></label>
+          <div id="prop-slots" style="display:flex;flex-direction:column;gap:8px;"></div>
+          <button type="button" onclick="addPropSlot()" id="prop-add-btn"
+            style="margin-top:8px;width:100%;padding:8px;background:none;border:1.5px dashed var(--green-300);border-radius:7px;font-size:13px;color:var(--green-600);font-weight:500;cursor:pointer;transition:.15s;"
+            onmouseover="this.style.background='var(--green-50)'" onmouseout="this.style.background='none'">
+            + Add time slot
+          </button>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">Up to 4 options. Opponent picks one to confirm.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Venue</label>
+          <input class="form-input" name="venue" type="text" placeholder="e.g. Club Court 3"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group">
+            <label class="form-label">Surface</label>
+            <select class="form-input" name="surface">
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+              <option value="indoor">Indoor</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Note to opponent</label>
+          <textarea class="form-textarea" name="notes" placeholder="Optional message..." style="min-height:60px;"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:4px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;" onclick="return validateProposeForm()">📬 Send Proposal</button>
+          <button type="button" class="btn btn-outline" onclick="closeModals()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<style>
+@media(max-width:700px){.cal-layout{grid-template-columns:1fr!important;}}
+.cal-cell{min-height:90px;border-right:1px solid var(--gray-100);border-bottom:1px solid var(--gray-100);padding:6px;position:relative;box-sizing:border-box;transition:.1s;}
+.cal-cell:nth-child(7n){border-right:none;}
+.cal-cell:hover .cal-add-btn{opacity:1!important;}
+.cal-pill{font-size:11px;font-weight:500;padding:2px 7px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:.1s;line-height:1.5;}
+.cal-pill:hover{filter:brightness(.92);}
+.cal-day-num{font-size:13px;font-weight:600;margin-bottom:4px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
+.cal-more{font-size:10px;color:var(--gray-400);padding:1px 4px;cursor:pointer;}
+</style>
+
+<script>
+const LID = <%= league.id %>;
+const UID = <%= uid %>;
+const TODAY_STR = new Date().toISOString().slice(0,10);
+const CAN_PROPOSE = <%= (isMember && league.status==='active') ? 'true' : 'false' %>;
+const RESCHEDULE_OPP = '<%- rescheduleOpponent||'' %>';
+const PROPOSE_OPP = '<%- proposeOpponent||'' %>';
+
+const EVENTS = <%- JSON.stringify(calEvents).replace(/<\//g,'<\\/') %>;
+const MIN_DT = new Date().toISOString().slice(0,16);
+
+let propSlotCount = 0;
+
+// Build day map: { 'YYYY-MM-DD': [ev,...] }
+const dayMap = {};
+EVENTS.forEach(ev => {
+  if (!ev.date) return;
+  if (!dayMap[ev.date]) dayMap[ev.date] = [];
+  dayMap[ev.date].push(ev);
+});
+
+// Calendar state
+const todayObj = new Date();
+let curYear = todayObj.getFullYear();
+let curMonth = todayObj.getMonth(); // 0-based
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function renderCalendar() {
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  document.getElementById('cal-month-label').textContent = MONTHS[curMonth];
+  document.getElementById('cal-year-label').textContent = curYear;
+
+  const firstDay = new Date(curYear, curMonth, 1);
+  // Monday-based: Mon=0 ... Sun=6
+  let startDow = firstDay.getDay() - 1; if (startDow < 0) startDow = 6;
+  const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
+  const prevDays = new Date(curYear, curMonth, 0).getDate();
+  const totalCells = Math.ceil((startDow + daysInMonth) / 7) * 7;
+
+  for (let i = 0; i < totalCells; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    let dayNum, dateStr, isCurrentMonth = true;
+
+    if (i < startDow) {
+      dayNum = prevDays - startDow + i + 1;
+      const d = new Date(curYear, curMonth - 1, dayNum);
+      dateStr = d.toISOString().slice(0,10);
+      isCurrentMonth = false;
+    } else if (i - startDow < daysInMonth) {
+      dayNum = i - startDow + 1;
+      const d = new Date(curYear, curMonth, dayNum);
+      dateStr = d.toISOString().slice(0,10);
+    } else {
+      dayNum = i - startDow - daysInMonth + 1;
+      const d = new Date(curYear, curMonth + 1, dayNum);
+      dateStr = d.toISOString().slice(0,10);
+      isCurrentMonth = false;
+    }
+
+    const isToday = dateStr === TODAY_STR;
+    const isPast = dateStr < TODAY_STR;
+    cell.style.background = isCurrentMonth ? '#fff' : '#fafafa';
+
+    // Day number
+    const numEl = document.createElement('div');
+    numEl.className = 'cal-day-num';
+    numEl.textContent = dayNum;
+    numEl.style.color = isCurrentMonth ? (isPast ? 'var(--gray-400)' : 'var(--gray-800)') : 'var(--gray-200)';
+    if (isToday) { numEl.style.background = 'var(--green-500)'; numEl.style.color = '#fff'; }
+    cell.appendChild(numEl);
+
+    // Events for this day
+    const dayEvs = (dayMap[dateStr] || []).slice().sort((a,b) => (a.time||'').localeCompare(b.time||''));
+    const maxVisible = 3;
+    dayEvs.slice(0, maxVisible).forEach(ev => {
+      const pill = document.createElement('div');
+      pill.className = 'cal-pill';
+      pill.style.background = ev.color + '22';
+      pill.style.color = ev.color;
+      pill.style.border = '1px solid ' + ev.color + '44';
+      pill.textContent = (ev.time ? ev.time + ' ' : '') + ev.label;
+      pill.onclick = () => openEventModal(ev.id);
+      cell.appendChild(pill);
+    });
+    if (dayEvs.length > maxVisible) {
+      const more = document.createElement('div');
+      more.className = 'cal-more';
+      more.textContent = '+' + (dayEvs.length - maxVisible) + ' more';
+      more.onclick = () => openDayModal(dateStr, dayEvs);
+      cell.appendChild(more);
+    }
+
+    // "+" button to add proposal (future days, current month, member)
+    if (CAN_PROPOSE && isCurrentMonth && !isPast) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'cal-add-btn';
+      addBtn.style.cssText = 'position:absolute;top:5px;right:5px;width:20px;height:20px;border-radius:50%;background:var(--green-500);border:none;color:#fff;font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;padding:0;';
+      addBtn.textContent = '+';
+      addBtn.title = 'Propose match on this day';
+      addBtn.onclick = (e) => { e.stopPropagation(); openProposalModal(dateStr); };
+      cell.appendChild(addBtn);
+    }
+
+    grid.appendChild(cell);
+  }
+}
+
+function calNav(dir) { curMonth += dir; if (curMonth > 11) { curMonth = 0; curYear++; } else if (curMonth < 0) { curMonth = 11; curYear--; } renderCalendar(); }
+function calToday() { curYear = todayObj.getFullYear(); curMonth = todayObj.getMonth(); renderCalendar(); }
+
+// Event detail modal
+function openEventModal(evId) {
+  const ev = EVENTS.find(e => e.id === evId);
+  if (!ev) return;
+  const modal = document.getElementById('modal-event');
+  document.getElementById('modal-event-title').textContent = evLabel(ev);
+
+  let html = '';
+  const infoRow = (icon, text) => text ? `<div style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--gray-600);margin-bottom:6px;"><span>${icon}</span><span>${text}</span></div>` : '';
+
+  if (ev.type === 'match') {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#536D33;"></span><span style="font-size:12px;font-weight:700;color:#536D33;text-transform:uppercase;letter-spacing:.05em;">Played Match</span></div>`;
+    html += infoRow('🆚', `${ev.p1name}${ev.p1partner?' & '+ev.p1partner:''} vs ${ev.p2name}${ev.p2partner?' & '+ev.p2partner:''}`);
+    html += infoRow('📅', fmtDTjs(ev.date + (ev.time?'T'+ev.time:'')));
+    if (ev.score) html += infoRow('🏆', ev.score);
+    html += infoRow('🎾', ev.surface);
+    if (ev.venue) html += infoRow('📍', ev.venue);
+    if (ev.myWin !== undefined) html += `<div style="margin-top:12px;padding:8px 12px;border-radius:8px;font-weight:600;font-size:13px;background:${ev.myWin?'var(--green-50)':'#fef2f2'};color:${ev.myWin?'var(--green-700)':'#dc2626'};">${ev.myWin?'✅ You won':'❌ You lost'}</div>`;
+
+  } else if (ev.type === 'scheduled') {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#1d4ed8;"></span><span style="font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;">Confirmed Match</span></div>`;
+    html += infoRow('🆚', 'vs ' + ev.oppName);
+    html += infoRow('📅', fmtDTjs(ev.date + (ev.time?'T'+ev.time:'')));
+    html += infoRow('🎾', ev.surface);
+    if (ev.venue) html += infoRow('📍', ev.venue);
+    if (ev.iAmProposer) {
+      html += `<div style="margin-top:16px;"><form method="POST" action="/leagues/${LID}/proposals/${ev.proposalId}/cancel" style="display:flex;gap:8px;"><input type="hidden" name="reschedule" value="1"/><button type="submit" class="btn btn-outline btn-sm" style="flex:1;" onclick="return confirm('Cancel this match and propose new times?')">🔄 Reschedule</button><button type="submit" name="reschedule" value="0" class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fecaca;" onclick="return confirm('Cancel this match?')">Cancel</button></form></div>`;
+    }
+
+  } else if (ev.type === 'incoming') {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#7c3aed;"></span><span style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;">Proposal — Choose a Slot</span></div>`;
+    html += infoRow('👤', 'From: ' + ev.oppName);
+    html += infoRow('🎾', ev.surface);
+    if (ev.venue) html += infoRow('📍', ev.venue);
+    if (ev.notes) html += `<div style="font-size:12px;color:var(--gray-500);background:var(--gray-50);border-radius:6px;padding:8px;margin:8px 0;">${ev.notes}</div>`;
+    html += `<div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px;">All proposed times:</div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    ev.allSlots.forEach(s => {
+      html += `<form method="POST" action="/leagues/${LID}/proposals/${ev.proposalId}/accept"><input type="hidden" name="slot_id" value="${s.id}"><button type="submit" style="width:100%;text-align:left;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.borderColor='#7c3aed';this.style.background='#f5f3ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'"><span style="font-weight:500;">📅 ${fmtDTjs(s.dt)}</span><span style="font-size:12px;color:#7c3aed;font-weight:700;">Accept ✓</span></button></form>`;
+    });
+    html += `</div><form method="POST" action="/leagues/${LID}/proposals/${ev.proposalId}/decline" style="margin-top:10px;"><button type="submit" style="width:100%;padding:8px;background:none;border:1px solid #fecaca;border-radius:7px;color:#dc2626;font-size:13px;cursor:pointer;font-weight:500;" onclick="return confirm('Decline this proposal?')">✕ Decline all</button></form>`;
+
+  } else if (ev.type === 'outgoing') {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="width:10px;height:10px;border-radius:50%;background:#d97706;"></span><span style="font-size:12px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:.05em;">Sent Proposal</span></div>`;
+    html += infoRow('👤', 'To: ' + ev.oppName);
+    html += infoRow('🎾', ev.surface);
+    if (ev.venue) html += infoRow('📍', ev.venue);
+    if (ev.notes) html += `<div style="font-size:12px;color:var(--gray-500);background:var(--gray-50);border-radius:6px;padding:8px;margin:8px 0;">${ev.notes}</div>`;
+    html += `<div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px;">Proposed times:</div>`;
+    ev.allSlots.forEach(s => { html += `<div style="font-size:13px;color:var(--gray-700);padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;margin-bottom:4px;">📅 ${fmtDTjs(s.dt)}</div>`; });
+    html += `<form method="POST" action="/leagues/${LID}/proposals/${ev.proposalId}/cancel" style="margin-top:12px;"><button type="submit" style="width:100%;padding:8px;background:none;border:1px solid #fecaca;border-radius:7px;color:#dc2626;font-size:13px;cursor:pointer;font-weight:500;" onclick="return confirm('Withdraw this proposal?')">✕ Withdraw proposal</button></form>`;
+  }
+
+  document.getElementById('modal-event-body').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function openDayModal(dateStr, evs) {
+  const modal = document.getElementById('modal-event');
+  document.getElementById('modal-event-title').textContent = '📅 ' + new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  let html = `<div style="display:flex;flex-direction:column;gap:8px;">`;
+  evs.forEach(ev => {
+    html += `<button onclick="closeModals();setTimeout(()=>openEventModal('${ev.id}'),100)" style="text-align:left;padding:10px 14px;border:1.5px solid ${ev.color}33;border-radius:8px;background:${ev.color}11;cursor:pointer;font-size:13px;color:${ev.color};font-weight:500;">${(ev.time?ev.time+' ':'')}${ev.label}</button>`;
+  });
+  html += `</div>`;
+  document.getElementById('modal-event-body').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function evLabel(ev) {
+  const typeLabel = {match:'Match',scheduled:'Confirmed',incoming:'Incoming Proposal',outgoing:'Sent Proposal'};
+  return (typeLabel[ev.type]||'Event') + ' — ' + (ev.date ? new Date(ev.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '');
+}
+
+function fmtDTjs(dt) {
+  if (!dt) return '';
+  try {
+    const d = new Date(dt.length <= 10 ? dt+'T12:00:00' : dt);
+    return d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  } catch(e) { return dt; }
+}
+
+// Proposal modal
+function openProposalModal(prefillDate) {
+  propSlotCount = 0;
+  document.getElementById('prop-slots').innerHTML = '';
+  document.getElementById('prop-add-btn').style.display = 'block';
+  document.getElementById('prop-opp').value = '';
+  addPropSlot(prefillDate);
+
+  const autoOpp = RESCHEDULE_OPP || PROPOSE_OPP;
+  if (autoOpp) {
+    const sel = document.getElementById('prop-opp');
+    if (sel) sel.value = autoOpp;
+  }
+
+  document.getElementById('modal-proposal').style.display = 'flex';
+}
+
+function addPropSlot(prefillDate) {
+  if (propSlotCount >= 4) return;
+  propSlotCount++;
+  const list = document.getElementById('prop-slots');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  const inp = document.createElement('input');
+  inp.type = 'datetime-local'; inp.name = 'slots'; inp.min = MIN_DT;
+  inp.className = 'form-input'; inp.style.flex = '1'; inp.required = true;
+  if (prefillDate) inp.value = prefillDate + 'T10:00';
+  const rm = document.createElement('button');
+  rm.type = 'button'; rm.textContent = '✕';
+  rm.style.cssText = 'background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:16px;padding:4px;flex-shrink:0;';
+  rm.onclick = () => { row.remove(); propSlotCount--; document.getElementById('prop-add-btn').style.display = propSlotCount>=4?'none':'block'; };
+  row.appendChild(inp); row.appendChild(rm); list.appendChild(row);
+  document.getElementById('prop-add-btn').style.display = propSlotCount >= 4 ? 'none' : 'block';
+  inp.focus();
+}
+
+function validateProposeForm() {
+  const slots = document.querySelectorAll('#prop-slots input[name="slots"]');
+  if (!document.getElementById('prop-opp').value) { alert('Please select an opponent.'); return false; }
+  if (slots.length === 0) { alert('Add at least one time slot.'); return false; }
+  return true;
+}
+
+function closeModals() {
+  ['modal-event','modal-proposal'].forEach(id => { const m=document.getElementById(id); if(m) m.style.display='none'; });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModals(); });
+
+// Init
+renderCalendar();
+
+// Auto-open proposal modal if reschedule or propose param set
+if (RESCHEDULE_OPP || PROPOSE_OPP) setTimeout(() => openProposalModal(), 200);
+</script>
+
+<%- include('layout_bottom') %>

@@ -59,7 +59,7 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL, description TEXT,
     format TEXT DEFAULT 'round_robin',
-    status TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'draft',
     created_by INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (created_by) REFERENCES users(id))`);
@@ -111,6 +111,35 @@ db.serialize(() => {
     expires_at DATETIME NOT NULL, used INTEGER DEFAULT 0,
     FOREIGN KEY (league_id) REFERENCES leagues(id),
     FOREIGN KEY (invited_by) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#1d4ed8',
+    player1_id INTEGER NOT NULL,
+    player2_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id),
+    FOREIGN KEY (player1_id) REFERENCES users(id),
+    FOREIGN KEY (player2_id) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_pools (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#1d4ed8',
+    sort_order INTEGER DEFAULT 0,
+    created_by INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_pool_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_id INTEGER NOT NULL,
+    league_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    UNIQUE(pool_id, user_id),
+    FOREIGN KEY (pool_id) REFERENCES league_pools(id),
+    FOREIGN KEY (user_id) REFERENCES users(id))`);
   // Migrate existing tables — ignored silently if column already exists
   db.run(`ALTER TABLE matches ADD COLUMN match_type TEXT DEFAULT 'singles'`, () => {});
   db.run(`ALTER TABLE leagues ADD COLUMN plan TEXT DEFAULT 'free'`, () => {});
@@ -119,8 +148,72 @@ db.serialize(() => {
   db.run(`ALTER TABLE scheduled_matches ADD COLUMN match_type TEXT DEFAULT 'singles'`, () => {});
   db.run(`ALTER TABLE scheduled_matches ADD COLUMN player1_partner_id INTEGER`, () => {});
   db.run(`ALTER TABLE scheduled_matches ADD COLUMN player2_partner_id INTEGER`, () => {});
+  db.run(`ALTER TABLE league_matches ADD COLUMN match_type TEXT DEFAULT 'singles'`, () => {});
   db.run(`ALTER TABLE league_matches ADD COLUMN player1_partner_id INTEGER`, () => {});
   db.run(`ALTER TABLE league_matches ADD COLUMN player2_partner_id INTEGER`, () => {});
+  db.run(`ALTER TABLE league_matches ADD COLUMN venue TEXT`, () => {});
+  db.run(`CREATE TABLE IF NOT EXISTS match_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposer_id INTEGER NOT NULL,
+    opponent_id INTEGER NOT NULL,
+    player1_partner_id INTEGER,
+    player2_partner_id INTEGER,
+    match_type TEXT DEFAULT 'singles',
+    venue TEXT, surface TEXT DEFAULT 'hard',
+    format TEXT DEFAULT 'best_of_3', notes TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (proposer_id) REFERENCES users(id),
+    FOREIGN KEY (opponent_id) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS match_proposal_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL,
+    proposed_at DATETIME NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (proposal_id) REFERENCES match_proposals(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL,
+    proposer_id INTEGER NOT NULL,
+    opponent_id INTEGER NOT NULL,
+    venue TEXT, surface TEXT DEFAULT 'hard', notes TEXT,
+    status TEXT DEFAULT 'pending',
+    accepted_slot_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id),
+    FOREIGN KEY (proposer_id) REFERENCES users(id),
+    FOREIGN KEY (opponent_id) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_proposal_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL,
+    proposed_at DATETIME NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (proposal_id) REFERENCES league_proposals(id))`);
+
+  // Default admin account — created once, ignored if already exists
+  const DEFAULT_ADMIN_USER = 'admin';
+  const DEFAULT_ADMIN_PASS = 'Admin@Tennis1';
+  const DEFAULT_ADMIN_EMAIL = 'admin@tennistrack.local';
+  const adminHash = bcrypt.hashSync(DEFAULT_ADMIN_PASS, 10);
+  db.run(
+    `INSERT OR IGNORE INTO users (username, email, password, full_name, is_admin) VALUES (?, ?, ?, ?, 1)`,
+    [DEFAULT_ADMIN_USER, DEFAULT_ADMIN_EMAIL, adminHash, 'Administrator'],
+    function(err) {
+      if (!err && this.changes > 0) {
+        console.log('');
+        console.log('╔══════════════════════════════════════════╗');
+        console.log('║        DEFAULT ADMIN ACCOUNT CREATED     ║');
+        console.log('╠══════════════════════════════════════════╣');
+        console.log(`║  Username : ${DEFAULT_ADMIN_USER.padEnd(29)}║`);
+        console.log(`║  Password : ${DEFAULT_ADMIN_PASS.padEnd(29)}║`);
+        console.log(`║  Email    : ${DEFAULT_ADMIN_EMAIL.padEnd(29)}║`);
+        console.log('╠══════════════════════════════════════════╣');
+        console.log('║  Change the password after first login!  ║');
+        console.log('╚══════════════════════════════════════════╝');
+        console.log('');
+      }
+    }
+  );
 });
 
 app.set('view engine', 'ejs');
@@ -379,12 +472,26 @@ app.post('/matches/:id/delete', requireAdmin, async (req,res) => {
 });
 
 // ── Schedule ──────────────────────────────────────────────────────────────
+async function getProposalsForUser(uid) {
+  const incoming = await all(`SELECT mp.*,u1.username as proposer_name,u1.full_name as proposer_full,p1p.username as p1partnername,p2p.username as p2partnername FROM match_proposals mp JOIN users u1 ON mp.proposer_id=u1.id LEFT JOIN users p1p ON mp.player1_partner_id=p1p.id LEFT JOIN users p2p ON mp.player2_partner_id=p2p.id WHERE mp.opponent_id=? AND mp.status='pending' ORDER BY mp.created_at DESC`, [uid]);
+  const outgoing = await all(`SELECT mp.*,u2.username as opponent_name,u2.full_name as opponent_full FROM match_proposals mp JOIN users u2 ON mp.opponent_id=u2.id WHERE mp.proposer_id=? AND mp.status IN ('pending','accepted','declined') ORDER BY mp.created_at DESC`, [uid]);
+  const allIds = [...incoming.map(p=>p.id),...outgoing.map(p=>p.id)];
+  const slots = allIds.length ? await all(`SELECT * FROM match_proposal_slots WHERE proposal_id IN (${allIds.map(()=>'?').join(',')}) ORDER BY sort_order ASC`, allIds) : [];
+  const slotMap = {};
+  slots.forEach(s=>{ if(!slotMap[s.proposal_id]) slotMap[s.proposal_id]=[]; slotMap[s.proposal_id].push(s); });
+  incoming.forEach(p=>{ p.slots=slotMap[p.id]||[]; });
+  outgoing.forEach(p=>{ p.slots=slotMap[p.id]||[]; });
+  return { incoming, outgoing };
+}
+
 app.get('/schedule', requireAuth, async (req,res) => {
   const uid = req.session.userId;
   const user = await get('SELECT * FROM users WHERE id=?', [uid]);
   const players = await all('SELECT id,username,full_name FROM users WHERE id!=?', [uid]);
   const scheduled = await all(`SELECT sm.*,u1.username as p1name,u1.full_name as p1full,u2.username as p2name,u2.full_name as p2full,p1p.username as p1partnername,p2p.username as p2partnername FROM scheduled_matches sm JOIN users u1 ON sm.player1_id=u1.id JOIN users u2 ON sm.player2_id=u2.id LEFT JOIN users p1p ON sm.player1_partner_id=p1p.id LEFT JOIN users p2p ON sm.player2_partner_id=p2p.id WHERE (sm.player1_id=? OR sm.player2_id=? OR sm.player1_partner_id=? OR sm.player2_partner_id=?) ORDER BY sm.scheduled_at ASC`,[uid,uid,uid,uid]);
-  res.render('schedule',{user,players,scheduled,uid,error:null,success:null});
+  const { incoming, outgoing } = await getProposalsForUser(uid);
+  const success = req.query.success==='proposal_sent'?'Proposal sent! The opponent will be notified.':req.query.success==='accepted'?'Slot accepted — match scheduled!':null;
+  res.render('schedule',{user,players,scheduled,uid,incoming,outgoing,error:null,success});
 });
 
 app.post('/schedule/new', requireAuth, async (req,res) => {
@@ -395,7 +502,8 @@ app.post('/schedule/new', requireAuth, async (req,res) => {
     const user=await get('SELECT * FROM users WHERE id=?',[uid]);
     const players=await all('SELECT id,username,full_name FROM users WHERE id!=?',[uid]);
     const scheduled=await all(`SELECT sm.*,u1.username as p1name,u2.username as p2name,p1p.username as p1partnername,p2p.username as p2partnername FROM scheduled_matches sm JOIN users u1 ON sm.player1_id=u1.id JOIN users u2 ON sm.player2_id=u2.id LEFT JOIN users p1p ON sm.player1_partner_id=p1p.id LEFT JOIN users p2p ON sm.player2_partner_id=p2p.id WHERE (sm.player1_id=? OR sm.player2_id=? OR sm.player1_partner_id=? OR sm.player2_partner_id=?) ORDER BY sm.scheduled_at ASC`,[uid,uid,uid,uid]);
-    return res.render('schedule',{user,players,scheduled,uid,error,success:null});
+    const {incoming,outgoing}=await getProposalsForUser(uid);
+    return res.render('schedule',{user,players,scheduled,uid,incoming,outgoing,error,success:null});
   };
   if(!opponent_id||!scheduled_at) return reRender('Opponent and date/time required.');
   if(isDoubles&&!partner_id) return reRender('Please select your partner for doubles.');
@@ -412,8 +520,9 @@ app.post('/schedule/new', requireAuth, async (req,res) => {
   try { await notify.notifyMatchScheduled({player:me,opponent:opp,scheduledAt:scheduled_at,venue,matchId:r.lastID}); } catch(e){}
   const user=await get('SELECT * FROM users WHERE id=?',[uid]);
   const players=await all('SELECT id,username,full_name FROM users WHERE id!=?',[uid]);
-  const scheduled=await all(`SELECT sm.*,u1.username as p1name,u1.full_name as p1full,u2.username as p2name,u2.full_name as p2full FROM scheduled_matches sm JOIN users u1 ON sm.player1_id=u1.id JOIN users u2 ON sm.player2_id=u2.id WHERE (sm.player1_id=? OR sm.player2_id=?) ORDER BY sm.scheduled_at ASC`,[uid,uid]);
-  res.render('schedule',{user,players,scheduled,uid,error:null,success:'Match scheduled! Notifications sent.'});
+  const scheduled=await all(`SELECT sm.*,u1.username as p1name,u1.full_name as p1full,u2.username as p2name,u2.full_name as p2full,p1p.username as p1partnername,p2p.username as p2partnername FROM scheduled_matches sm JOIN users u1 ON sm.player1_id=u1.id JOIN users u2 ON sm.player2_id=u2.id LEFT JOIN users p1p ON sm.player1_partner_id=p1p.id LEFT JOIN users p2p ON sm.player2_partner_id=p2p.id WHERE (sm.player1_id=? OR sm.player2_id=? OR sm.player1_partner_id=? OR sm.player2_partner_id=?) ORDER BY sm.scheduled_at ASC`,[uid,uid,uid,uid]);
+  const {incoming,outgoing}=await getProposalsForUser(uid);
+  res.render('schedule',{user,players,scheduled,uid,incoming,outgoing,error:null,success:'Match scheduled! Notifications sent.'});
 });
 
 app.post('/schedule/:id/cancel', requireAuth, async (req,res) => {
@@ -426,6 +535,74 @@ app.post('/schedule/:id/cancel', requireAuth, async (req,res) => {
   const other = sm.player1_id===uid ? p2 : p1;
   await createNotification(other.id,'alert','❌ Match Cancelled',`Match vs ${p1.id===uid?p1.username:p2.username} has been cancelled.`,'/schedule');
   try { await notify.notifyMatchCancelled({player:p1,opponent:p2,scheduledAt:sm.scheduled_at}); } catch(e){}
+  res.redirect('/schedule');
+});
+
+// ── Match Proposals ───────────────────────────────────────────────────────
+app.post('/proposals/new', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const { opponent_id, partner_id, opponent_partner_id, match_type, venue, surface, format, notes } = req.body;
+  let slots = req.body.slots || [];
+  if (!Array.isArray(slots)) slots = [slots];
+  slots = slots.filter(Boolean);
+  if (!opponent_id || slots.length === 0) return res.redirect('/schedule?err=propose');
+  const isDoubles = match_type === 'doubles';
+  const p1pid = isDoubles && partner_id ? parseInt(partner_id) : null;
+  const p2pid = isDoubles && opponent_partner_id ? parseInt(opponent_partner_id) : null;
+  const r = await run(
+    'INSERT INTO match_proposals (proposer_id,opponent_id,player1_partner_id,player2_partner_id,match_type,venue,surface,format,notes) VALUES (?,?,?,?,?,?,?,?,?)',
+    [uid, parseInt(opponent_id), p1pid, p2pid, match_type||'singles', venue||'', surface||'hard', format||'best_of_3', notes||'']);
+  for (let i = 0; i < slots.length; i++) {
+    await run('INSERT INTO match_proposal_slots (proposal_id,proposed_at,sort_order) VALUES (?,?,?)', [r.lastID, slots[i], i]);
+  }
+  const me = await get('SELECT * FROM users WHERE id=?', [uid]);
+  const opp = await get('SELECT * FROM users WHERE id=?', [parseInt(opponent_id)]);
+  await createNotification(opp.id, 'schedule', '📬 Match Proposal',
+    `${me.full_name||me.username} proposed ${slots.length} time slot${slots.length>1?'s':''} for a match — pick one to confirm`, '/schedule');
+  res.redirect('/schedule?success=proposal_sent');
+});
+
+app.post('/proposals/:id/accept', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const pid = parseInt(req.params.id);
+  const slot_id = parseInt(req.body.slot_id);
+  const proposal = await get("SELECT * FROM match_proposals WHERE id=? AND opponent_id=? AND status='pending'", [pid, uid]);
+  if (!proposal) return res.redirect('/schedule');
+  const slot = await get('SELECT * FROM match_proposal_slots WHERE id=? AND proposal_id=?', [slot_id, pid]);
+  if (!slot) return res.redirect('/schedule');
+  await run(
+    'INSERT INTO scheduled_matches (player1_id,player2_id,player1_partner_id,player2_partner_id,match_type,scheduled_at,venue,surface,format,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [proposal.proposer_id, uid, proposal.player1_partner_id, proposal.player2_partner_id,
+     proposal.match_type, slot.proposed_at, proposal.venue, proposal.surface, proposal.format, proposal.notes||'', uid]);
+  await run("UPDATE match_proposals SET status='accepted' WHERE id=?", [pid]);
+  const me = await get('SELECT * FROM users WHERE id=?', [uid]);
+  const proposer = await get('SELECT * FROM users WHERE id=?', [proposal.proposer_id]);
+  await createNotification(proposer.id, 'schedule', '✅ Proposal Accepted',
+    `${me.full_name||me.username} accepted your match proposal for ${new Date(slot.proposed_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}`, '/schedule');
+  res.redirect('/schedule?success=accepted');
+});
+
+app.post('/proposals/:id/decline', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const pid = parseInt(req.params.id);
+  const proposal = await get("SELECT * FROM match_proposals WHERE id=? AND opponent_id=? AND status='pending'", [pid, uid]);
+  if (!proposal) return res.redirect('/schedule');
+  await run("UPDATE match_proposals SET status='declined' WHERE id=?", [pid]);
+  const me = await get('SELECT * FROM users WHERE id=?', [uid]);
+  await createNotification(proposal.proposer_id, 'alert', '❌ Proposal Declined',
+    `${me.full_name||me.username} declined your match proposal`, '/schedule');
+  res.redirect('/schedule');
+});
+
+app.post('/proposals/:id/cancel', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const pid = parseInt(req.params.id);
+  const proposal = await get("SELECT * FROM match_proposals WHERE id=? AND proposer_id=? AND status='pending'", [pid, uid]);
+  if (!proposal) return res.redirect('/schedule');
+  await run("UPDATE match_proposals SET status='cancelled' WHERE id=?", [pid]);
+  const me = await get('SELECT * FROM users WHERE id=?', [uid]);
+  await createNotification(proposal.opponent_id, 'info', '📬 Proposal Withdrawn',
+    `${me.full_name||me.username} withdrew their match proposal`, '/schedule');
   res.redirect('/schedule');
 });
 
@@ -469,11 +646,25 @@ app.get('/compare', requireAuth, async (req,res) => {
 app.get('/admin', requireAdmin, async (req,res) => {
   const uid = req.session.userId;
   const user = await get('SELECT * FROM users WHERE id=?', [uid]);
-  const users = await all('SELECT id,username,full_name,email,phone,is_admin,created_at FROM users ORDER BY created_at DESC');
+  const users = await all('SELECT id,username,full_name,email,phone,is_admin,created_at FROM users WHERE is_admin=0 ORDER BY created_at DESC');
   const matches = await all(`SELECT m.*,u1.username as p1name,u2.username as p2name,uw.username as winnername FROM matches m JOIN users u1 ON m.player1_id=u1.id JOIN users u2 ON m.player2_id=u2.id LEFT JOIN users uw ON m.winner_id=uw.id ORDER BY m.played_at DESC LIMIT 50`);
   const scheduled = await all(`SELECT sm.*,u1.username as p1name,u2.username as p2name FROM scheduled_matches sm JOIN users u1 ON sm.player1_id=u1.id JOIN users u2 ON sm.player2_id=u2.id ORDER BY sm.scheduled_at DESC LIMIT 50`);
   res.render('admin',{user,users,matches,scheduled,uid});
 });
+app.post('/admin/users/:id/edit', requireAdmin, async (req,res) => {
+  const { full_name, email, phone } = req.body;
+  await run('UPDATE users SET full_name=?,email=?,phone=? WHERE id=?',
+    [full_name||'', email||'', phone||null, req.params.id]);
+  res.redirect('/admin');
+});
+
+app.post('/admin/matches/:id/edit', requireAdmin, async (req,res) => {
+  const { score, winner_id, played_at } = req.body;
+  await run('UPDATE matches SET score=?,winner_id=?,played_at=? WHERE id=?',
+    [score, winner_id||null, played_at||new Date().toISOString(), req.params.id]);
+  res.redirect('/admin');
+});
+
 app.post('/admin/users/:id/toggle-admin', requireAdmin, async (req,res) => {
   const u = await get('SELECT is_admin FROM users WHERE id=?', [req.params.id]);
   if(u) await run('UPDATE users SET is_admin=? WHERE id=?', [u.is_admin?0:1, req.params.id]);
@@ -538,9 +729,45 @@ async function getLeagueData(leagueId, uid) {
     }).length;
     return {...m, played: played.length, wins, losses, points: wins*2};
   }).sort((a,b) => b.points-a.points || b.wins-a.wins);
+
+  // Team standings for doubles categories
+  const doublesCategories = ['mens_doubles','womens_doubles','mixed_doubles'];
+  let teamStandings = null;
+  if (doublesCategories.includes(league.category||'')) {
+    const teamsMap = {};
+    const memberById = Object.fromEntries(members.map(m => [m.id, m]));
+    lmatches.forEach(lm => {
+      const t1ids = [lm.player1_id, lm.player1_partner_id].filter(Boolean).sort((a,b)=>a-b);
+      const t2ids = [lm.player2_id, lm.player2_partner_id].filter(Boolean).sort((a,b)=>a-b);
+      [{ ids: t1ids, partnerIds: t2ids, side: 1 }, { ids: t2ids, partnerIds: t1ids, side: 2 }].forEach(({ ids, side }) => {
+        const key = ids.join('_');
+        if (!teamsMap[key]) {
+          const names = ids.map(id => memberById[id]?.full_name || memberById[id]?.username || `#${id}`);
+          const usernames = ids.map(id => memberById[id]?.username || `#${id}`);
+          teamsMap[key] = { key, ids, names, usernames, played: 0, wins: 0, losses: 0, points: 0 };
+        }
+        const t1won = lm.winner_id && (lm.winner_id===lm.player1_id || lm.winner_id===lm.player1_partner_id);
+        const t2won = lm.winner_id && (lm.winner_id===lm.player2_id || lm.winner_id===lm.player2_partner_id);
+        const myWin  = side===1 ? t1won : t2won;
+        const myLoss = side===1 ? t2won : t1won;
+        teamsMap[key].played++;
+        if (myWin)  { teamsMap[key].wins++;   teamsMap[key].points += 2; }
+        if (myLoss) { teamsMap[key].losses++; }
+      });
+    });
+    teamStandings = Object.values(teamsMap).sort((a,b) => b.points-a.points || b.wins-a.wins);
+  }
+
   const plan = LEAGUE_PLANS[league.plan] || LEAGUE_PLANS.free;
   const invites = await all(`SELECT li.*,u.username as inviter FROM league_invites li JOIN users u ON li.invited_by=u.id WHERE li.league_id=? AND li.used=0 AND datetime(li.expires_at)>datetime('now') ORDER BY li.expires_at DESC`, [leagueId]);
-  return { league, members, lmatches, standings, plan, invites,
+  const teams = await all(`SELECT lt.*,u1.username as p1name,u1.full_name as p1full,u2.username as p2name,u2.full_name as p2full FROM league_teams lt JOIN users u1 ON lt.player1_id=u1.id JOIN users u2 ON lt.player2_id=u2.id WHERE lt.league_id=? ORDER BY lt.created_at ASC`, [leagueId]);
+  let pools = [];
+  try {
+    const poolRows = await all(`SELECT lp.* FROM league_pools lp WHERE lp.league_id=? ORDER BY lp.sort_order ASC, lp.created_at ASC`, [leagueId]);
+    const poolMemberRows = await all(`SELECT lpm.pool_id, u.id, u.username, u.full_name FROM league_pool_members lpm JOIN users u ON lpm.user_id=u.id WHERE lpm.league_id=?`, [leagueId]);
+    pools = poolRows.map(p => ({ ...p, poolMembers: poolMemberRows.filter(m => m.pool_id === p.id) }));
+  } catch(e) {}
+  return { league, members, lmatches, standings, teamStandings, teams, pools, plan, invites,
     isMember: members.some(m => m.id===uid),
     isCreator: league.created_by===uid };
 }
@@ -565,12 +792,192 @@ app.post('/leagues', requireAuth, async (req,res) => {
   res.redirect(`/leagues/${r.lastID}`);
 });
 
+// ── League Dashboard ─────────────────────────────────────────────────────
+app.get('/leagues/:id/dashboard', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
+  if (!data) return res.redirect('/leagues');
+  const user = await get('SELECT * FROM users WHERE id=?', [uid]);
+
+  const { lmatches, members, standings, teamStandings, league } = data;
+
+  // Summary stats
+  const totalMatches = lmatches.length;
+  const decidedMatches = lmatches.filter(m => m.winner_id).length;
+  const activePlayers = new Set([
+    ...lmatches.map(m => m.player1_id),
+    ...lmatches.map(m => m.player2_id),
+    ...lmatches.filter(m => m.player1_partner_id).map(m => m.player1_partner_id),
+    ...lmatches.filter(m => m.player2_partner_id).map(m => m.player2_partner_id),
+  ]).size;
+  const totalPoints = decidedMatches * 2;
+
+  // Match type split
+  const singlesCount = lmatches.filter(m => m.match_type !== 'doubles').length;
+  const doublesCount = lmatches.filter(m => m.match_type === 'doubles').length;
+
+  // Surface breakdown
+  const surfaceMap = {};
+  lmatches.forEach(m => { const s = m.surface||'hard'; surfaceMap[s] = (surfaceMap[s]||0) + 1; });
+  const surfaceLabels = Object.keys(surfaceMap);
+  const surfaceCounts = Object.values(surfaceMap);
+
+  // Monthly activity (last 6 months)
+  const monthLabels = [], monthCounts = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(); d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    monthLabels.push(d.toLocaleDateString('en-US', { month:'short', year:'2-digit' }));
+    monthCounts.push(lmatches.filter(m => (m.played_at||'').startsWith(key)).length);
+  }
+
+  // Top performers
+  const qualified = standings.filter(s => s.played >= 1).sort((a,b) => b.wins-a.wins);
+  const topWins     = qualified.slice(0, 3);
+  const topWinRate  = [...standings].filter(s => s.played >= 2)
+    .sort((a,b) => (b.wins/b.played) - (a.wins/a.played)).slice(0, 3)
+    .map(s => ({ ...s, winRate: Math.round((s.wins/s.played)*100) }));
+  const topActive   = [...standings].sort((a,b) => b.played-a.played).slice(0, 3);
+
+  // Venue breakdown
+  const venueMap = {};
+  lmatches.filter(m => m.venue).forEach(m => { venueMap[m.venue] = (venueMap[m.venue]||0) + 1; });
+  const topVenues = Object.entries(venueMap).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+  // Recent matches (last 8)
+  const recentMatches = lmatches.slice(0, 8);
+
+  const chartData = { surfaceLabels, surfaceCounts, monthLabels, monthCounts, singlesCount, doublesCount };
+
+  res.render('league_dashboard', {
+    user, uid, ...data, totalMatches, decidedMatches, activePlayers, totalPoints,
+    singlesCount, doublesCount, topWins, topWinRate, topActive,
+    topVenues, recentMatches, chartData
+  });
+});
+
+// ── League Calendar & Proposals ───────────────────────────────────────────
+async function getLeagueProposals(leagueId, uid) {
+  const rows = await all(`
+    SELECT lp.*, s.proposed_at as accepted_at,
+      u1.username as proposer_name, u1.full_name as proposer_full,
+      u2.username as opponent_name, u2.full_name as opponent_full
+    FROM league_proposals lp
+    JOIN users u1 ON lp.proposer_id=u1.id
+    JOIN users u2 ON lp.opponent_id=u2.id
+    LEFT JOIN league_proposal_slots s ON lp.accepted_slot_id=s.id
+    WHERE lp.league_id=? AND (lp.proposer_id=? OR lp.opponent_id=?) AND lp.status!='cancelled'
+    ORDER BY lp.created_at DESC`, [leagueId, uid, uid]);
+  const pids = rows.map(r => r.id);
+  const slots = pids.length ? await all(
+    `SELECT * FROM league_proposal_slots WHERE proposal_id IN (${pids.map(()=>'?').join(',')}) ORDER BY sort_order ASC`, pids) : [];
+  const slotMap = {};
+  slots.forEach(s => { if (!slotMap[s.proposal_id]) slotMap[s.proposal_id]=[]; slotMap[s.proposal_id].push(s); });
+  rows.forEach(r => { r.slots = slotMap[r.id]||[]; });
+  return {
+    incoming: rows.filter(r => r.opponent_id===uid && r.status==='pending'),
+    outgoing: rows.filter(r => r.proposer_id===uid && r.status==='pending'),
+    accepted: rows.filter(r => r.status==='accepted'),
+    all: rows
+  };
+}
+
+app.get('/leagues/:id/calendar', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isMember) return res.redirect(`/leagues/${lid}`);
+  const user = await get('SELECT * FROM users WHERE id=?', [uid]);
+  const proposals = await getLeagueProposals(lid, uid);
+  res.render('league_calendar', {
+    ...data, user, uid, proposals,
+    success: req.query.success||null, error: req.query.error||null,
+    rescheduleOpponent: req.query.reschedule||null,
+    proposeOpponent: req.query.propose||null
+  });
+});
+
+app.post('/leagues/:id/proposals/new', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isMember) return res.redirect(`/leagues/${lid}`);
+  const { opponent_id, venue, surface, notes } = req.body;
+  let slots = req.body.slots||[]; if (!Array.isArray(slots)) slots=[slots]; slots=slots.filter(Boolean);
+  if (!opponent_id||slots.length===0) return res.redirect(`/leagues/${lid}/calendar?error=Select an opponent and add at least one time slot.`);
+  const r = await run('INSERT INTO league_proposals (league_id,proposer_id,opponent_id,venue,surface,notes) VALUES (?,?,?,?,?,?)',
+    [lid, uid, parseInt(opponent_id), venue||'', surface||'hard', notes||'']);
+  for (let i=0; i<slots.length; i++) await run('INSERT INTO league_proposal_slots (proposal_id,proposed_at,sort_order) VALUES (?,?,?)',[r.lastID,slots[i],i]);
+  const me = await get('SELECT * FROM users WHERE id=?',[uid]);
+  const opp = await get('SELECT * FROM users WHERE id=?',[parseInt(opponent_id)]);
+  await createNotification(opp.id,'schedule','📬 League Match Proposal',
+    `${me.full_name||me.username} proposed ${slots.length} time slot${slots.length!==1?'s':''} for a league match — pick one to confirm`,`/leagues/${lid}/calendar`);
+  res.redirect(`/leagues/${lid}/calendar?success=Proposal sent to ${opp.full_name||opp.username}!`);
+});
+
+app.post('/leagues/:id/proposals/:pid/accept', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const pid = parseInt(req.params.pid);
+  const slot_id = parseInt(req.body.slot_id);
+  const proposal = await get("SELECT * FROM league_proposals WHERE id=? AND league_id=? AND opponent_id=? AND status='pending'",[pid,lid,uid]);
+  if (!proposal) return res.redirect(`/leagues/${lid}/calendar`);
+  const slot = await get('SELECT * FROM league_proposal_slots WHERE id=? AND proposal_id=?',[slot_id,pid]);
+  if (!slot) return res.redirect(`/leagues/${lid}/calendar`);
+  await run("UPDATE league_proposals SET status='accepted',accepted_slot_id=? WHERE id=?",[slot_id,pid]);
+  const me = await get('SELECT * FROM users WHERE id=?',[uid]);
+  const proposer = await get('SELECT * FROM users WHERE id=?',[proposal.proposer_id]);
+  const dateLabel = new Date(slot.proposed_at).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  await createNotification(proposer.id,'schedule','✅ Match Confirmed',
+    `${me.full_name||me.username} accepted your proposal — confirmed for ${dateLabel}`,`/leagues/${lid}/calendar`);
+  res.redirect(`/leagues/${lid}/calendar?success=Match confirmed for ${dateLabel}!`);
+});
+
+app.post('/leagues/:id/proposals/:pid/decline', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const pid = parseInt(req.params.pid);
+  const proposal = await get("SELECT * FROM league_proposals WHERE id=? AND league_id=? AND opponent_id=? AND status='pending'",[pid,lid,uid]);
+  if (!proposal) return res.redirect(`/leagues/${lid}/calendar`);
+  await run("UPDATE league_proposals SET status='declined' WHERE id=?",[pid]);
+  const me = await get('SELECT * FROM users WHERE id=?',[uid]);
+  await createNotification(proposal.proposer_id,'alert','❌ Proposal Declined',
+    `${me.full_name||me.username} declined your match proposal`,`/leagues/${lid}/calendar`);
+  res.redirect(`/leagues/${lid}/calendar`);
+});
+
+app.post('/leagues/:id/proposals/:pid/cancel', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const pid = parseInt(req.params.pid);
+  const proposal = await get("SELECT * FROM league_proposals WHERE id=? AND league_id=? AND proposer_id=? AND status IN ('pending','accepted')",[pid,lid,uid]);
+  if (!proposal) return res.redirect(`/leagues/${lid}/calendar`);
+  const wasAccepted = proposal.status==='accepted';
+  await run("UPDATE league_proposals SET status='cancelled' WHERE id=?",[pid]);
+  const me = await get('SELECT * FROM users WHERE id=?',[uid]);
+  await createNotification(proposal.opponent_id,'info','📅 Match Update',
+    `${me.full_name||me.username} ${wasAccepted?'cancelled the confirmed match':'withdrew their match proposal'}`,`/leagues/${lid}/calendar`);
+  const redir = req.body.reschedule==='1'?`/leagues/${lid}/calendar?reschedule=${proposal.opponent_id}`:`/leagues/${lid}/calendar`;
+  res.redirect(redir);
+});
+
 app.get('/leagues/:id', requireAuth, async (req,res) => {
   const uid = req.session.userId;
   const user = await get('SELECT * FROM users WHERE id=?',[uid]);
-  const data = await getLeagueData(parseInt(req.params.id), uid);
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
   if (!data) return res.redirect('/leagues');
-  res.render('league_detail',{user,uid,...data,joinErr:req.query.err||null,error:null,success:null});
+  let acceptedProposals = [];
+  let calProposals = {incoming:[],outgoing:[],accepted:[],all:[]};
+  try {
+    acceptedProposals = await all(
+      `SELECT lp.*, s.proposed_at as scheduled_at FROM league_proposals lp
+       JOIN league_proposal_slots s ON lp.accepted_slot_id=s.id
+       WHERE lp.league_id=? AND lp.status='accepted'`, [lid]);
+  } catch(e) {}
+  try { calProposals = await getLeagueProposals(lid, uid); } catch(e) {}
+  res.render('league_detail',{user,uid,...data,acceptedProposals,calProposals,joinErr:req.query.err||null,error:null,success:null});
 });
 
 app.post('/leagues/:id/join', requireAuth, async (req,res) => {
@@ -594,7 +1001,7 @@ app.post('/leagues/:id/leave', requireAuth, async (req,res) => {
 
 app.post('/leagues/:id/match', requireAuth, async (req,res) => {
   const uid = req.session.userId;
-  const {opponent_id,partner_id,opponent_partner_id,score,winner_id,surface,match_type,played_at} = req.body;
+  const {opponent_id,partner_id,opponent_partner_id,score,winner_id,surface,match_type,played_at,venue} = req.body;
   const lid = parseInt(req.params.id);
   const user = await get('SELECT * FROM users WHERE id=?',[uid]);
   const data = await getLeagueData(lid, uid);
@@ -614,10 +1021,74 @@ app.post('/leagues/:id/match', requireAuth, async (req,res) => {
   if (!data.members.some(m=>m.id===oid)) return res.render('league_detail',{user,uid,...data,joinErr:null,error:'Opponent is not a league member.',success:null});
   // winner_id: '_opp' marker means opponent team won → use oid
   const resolvedWinner = winner_id ? (winner_id==='_opp' ? oid : parseInt(winner_id)||null) : null;
-  await run('INSERT INTO league_matches (league_id,player1_id,player2_id,player1_partner_id,player2_partner_id,winner_id,score,surface,match_type,played_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [lid,uid,oid,p1pid,p2pid,resolvedWinner,score,surface||'hard',resolvedType,played_at||new Date().toISOString()]);
+  await run('INSERT INTO league_matches (league_id,player1_id,player2_id,player1_partner_id,player2_partner_id,winner_id,score,surface,match_type,played_at,venue) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [lid,uid,oid,p1pid,p2pid,resolvedWinner,score,surface||'hard',resolvedType,played_at||new Date().toISOString(),venue||null]);
   const fresh = await getLeagueData(lid, uid);
   res.render('league_detail',{user,uid,...fresh,joinErr:null,error:null,success:'Match logged!'});
+});
+
+// ── League Teams ──────────────────────────────────────────────────────────
+app.post('/leagues/:id/teams', requireAuth, async (req,res) => {
+  const lid = parseInt(req.params.id);
+  const uid = req.session.userId;
+  const { name, color, player1_id, player2_id } = req.body;
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  const p1 = parseInt(player1_id), p2 = parseInt(player2_id);
+  if (!p1 || !p2 || p1 === p2) {
+    const user = await get('SELECT * FROM users WHERE id=?', [uid]);
+    return res.render('league_detail', {user, uid, ...data, joinErr:null, error:'Select two different players to form a team.', success:null});
+  }
+  await run('INSERT INTO league_teams (league_id,name,color,player1_id,player2_id,created_by) VALUES (?,?,?,?,?,?)',
+    [lid, (name||'').trim()||'Team', color||'#1d4ed8', p1, p2, uid]);
+  res.redirect(`/leagues/${lid}#teams`);
+});
+
+app.post('/leagues/:id/teams/:tid/delete', requireAuth, async (req,res) => {
+  const lid = parseInt(req.params.id);
+  const uid = req.session.userId;
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  await run('DELETE FROM league_teams WHERE id=? AND league_id=?', [req.params.tid, lid]);
+  res.redirect(`/leagues/${lid}#teams`);
+});
+
+// ── League Pools ───────────────────────────────────────────────────────────
+app.post('/leagues/:id/pools/save', requireAuth, async (req,res) => {
+  const lid = parseInt(req.params.id);
+  const uid = req.session.userId;
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  let poolsData;
+  try { poolsData = JSON.parse(req.body.pools_json || '[]'); } catch(e) { poolsData = []; }
+  // Wipe existing pools for this league and re-create
+  const existing = await all('SELECT id FROM league_pools WHERE league_id=?', [lid]);
+  for (const ep of existing) await run('DELETE FROM league_pool_members WHERE pool_id=?', [ep.id]);
+  await run('DELETE FROM league_pools WHERE league_id=?', [lid]);
+  for (let i = 0; i < poolsData.length; i++) {
+    const p = poolsData[i];
+    if (!p.name || !Array.isArray(p.players)) continue;
+    const r = await run('INSERT INTO league_pools (league_id,name,color,sort_order,created_by) VALUES (?,?,?,?,?)',
+      [lid, p.name.trim()||`Pool ${i+1}`, p.color||'#1d4ed8', i, uid]);
+    for (const pid of p.players) {
+      await run('INSERT OR IGNORE INTO league_pool_members (pool_id,league_id,user_id) VALUES (?,?,?)',
+        [r.lastID, lid, parseInt(pid)]);
+    }
+  }
+  if (req.body.start_after_save === '1' && data.league.status === 'draft') {
+    await run("UPDATE leagues SET status='active' WHERE id=?", [lid]);
+  }
+  res.redirect(`/leagues/${lid}#pools`);
+});
+
+app.post('/leagues/:id/pools/:pid/delete', requireAuth, async (req,res) => {
+  const lid = parseInt(req.params.id);
+  const uid = req.session.userId;
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  await run('DELETE FROM league_pool_members WHERE pool_id=?', [req.params.pid]);
+  await run('DELETE FROM league_pools WHERE id=? AND league_id=?', [req.params.pid, lid]);
+  res.redirect(`/leagues/${lid}#pools`);
 });
 
 // ── League Player Stats (SAS) ─────────────────────────────────────────────
@@ -703,6 +1174,53 @@ app.post('/leagues/:id/end', requireAuth, async (req,res) => {
   res.redirect(`/leagues/${req.params.id}`);
 });
 
+app.post('/leagues/:id/start', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const league = await get('SELECT * FROM leagues WHERE id=? AND created_by=?',[req.params.id,uid]);
+  if (league && league.status==='draft') await run("UPDATE leagues SET status='active' WHERE id=?",[league.id]);
+  res.redirect(`/leagues/${req.params.id}`);
+});
+
+app.post('/leagues/:id/pool-match', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  const { team1_id, team2_id, winner_team_id, score, surface, venue, played_at } = req.body;
+  const t1 = data.teams.find(t => t.id===parseInt(team1_id));
+  const t2 = data.teams.find(t => t.id===parseInt(team2_id));
+  if (!t1 || !t2 || !score) return res.redirect(`/leagues/${lid}#pools`);
+  let resolvedWinner = null;
+  if (winner_team_id) {
+    const wt = data.teams.find(t => t.id===parseInt(winner_team_id));
+    if (wt) resolvedWinner = wt.player1_id;
+  }
+  await run('INSERT INTO league_matches (league_id,player1_id,player2_id,player1_partner_id,player2_partner_id,winner_id,score,surface,match_type,played_at,venue) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [lid,t1.player1_id,t2.player1_id,t1.player2_id,t2.player2_id,resolvedWinner,score,surface||'grass','doubles',played_at||new Date().toISOString(),venue||null]);
+  res.redirect(`/leagues/${lid}#pools`);
+});
+
+app.post('/leagues/:id/pool-schedule', requireAuth, async (req,res) => {
+  const uid = req.session.userId;
+  const lid = parseInt(req.params.id);
+  const data = await getLeagueData(lid, uid);
+  if (!data || !data.isCreator) return res.redirect(`/leagues/${lid}`);
+  const { team1_id, team2_id, scheduled_at, venue, surface } = req.body;
+  const t1 = data.teams.find(t => t.id===parseInt(team1_id));
+  const t2 = data.teams.find(t => t.id===parseInt(team2_id));
+  if (!t1 || !t2 || !scheduled_at) return res.redirect(`/leagues/${lid}#pools`);
+  // Cancel any existing pending/accepted proposal between these two teams so there is only one active confirmed date per matchup
+  await run(`UPDATE league_proposals SET status='cancelled' WHERE league_id=? AND status IN ('pending','accepted')
+    AND ((proposer_id=? AND opponent_id=?) OR (proposer_id=? AND opponent_id=?))`,
+    [lid, t1.player1_id, t2.player1_id, t2.player1_id, t1.player1_id]);
+  // Create an already-accepted league_proposal so it shows in pool standings and calendar
+  const pr = await run('INSERT INTO league_proposals (league_id,proposer_id,opponent_id,venue,surface,notes,status) VALUES (?,?,?,?,?,?,?)',
+    [lid, t1.player1_id, t2.player1_id, venue||'', surface||'hard', '', 'pending']);
+  const sl = await run('INSERT INTO league_proposal_slots (proposal_id,proposed_at,sort_order) VALUES (?,?,0)', [pr.lastID, scheduled_at]);
+  await run('UPDATE league_proposals SET status=?,accepted_slot_id=? WHERE id=?', ['accepted', sl.lastID, pr.lastID]);
+  res.redirect(`/leagues/${lid}#pools`);
+});
+
 // ── League Settings (SaaS) ────────────────────────────────────────────────
 app.get('/leagues/:id/settings', requireAuth, async (req,res) => {
   const uid = req.session.userId;
@@ -765,7 +1283,7 @@ app.post('/leagues/:id/bulk-upload', requireAuth, async (req,res) => {
   const plan = data.plan;
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-  let added = 0, invited = 0, skipped = 0, errors = [];
+  let added = 0, created = 0, skipped = 0, errors = [];
   const details = [];
 
   for (const line of lines) {
@@ -782,42 +1300,54 @@ app.post('/leagues/:id/bulk-upload', requireAuth, async (req,res) => {
       break;
     }
 
-    const existing = await get('SELECT id,username,full_name,email FROM users WHERE email=?', [email]);
-    if (existing) {
-      const isMember = data.members.some(m => m.id === existing.id) ||
-        !!(await get('SELECT 1 FROM league_members WHERE league_id=? AND user_id=?', [data.league.id, existing.id]));
+    let player = await get('SELECT id,username,full_name,email FROM users WHERE email=?', [email]);
+
+    if (!player) {
+      // Auto-create account for new player
+      const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
+      let username = base;
+      let suffix = 1;
+      while (await get('SELECT id FROM users WHERE username=?', [username])) {
+        username = `${base}${suffix++}`;
+      }
+      const fullName = name || username;
+      const tempPassword = crypto.randomBytes(5).toString('hex'); // 10-char readable password
+      const hash = await bcrypt.hash(tempPassword, 10);
+      const nr = await run('INSERT INTO users (username,email,password,full_name) VALUES (?,?,?,?)',
+        [username, email, hash, fullName]);
+      player = { id: nr.lastID, username, full_name: fullName, email };
+      const loginUrl = `${req.protocol}://${req.get('host')}/login`;
+      try {
+        await notify.sendPlayerWelcomeEmail({ to: email, fullName, username, tempPassword, leagueName: data.league.name, loginUrl });
+      } catch(e) {
+        console.log(`[Bulk upload] New player ${username} / ${email} — temp password: ${tempPassword}`);
+      }
+      created++;
+      details.push({ email, status: 'created', name: fullName });
+    } else {
+      const isMember = !!(await get('SELECT 1 FROM league_members WHERE league_id=? AND user_id=?', [data.league.id, player.id]));
       if (isMember) {
         skipped++;
-        details.push({ email, status: 'already_enrolled', name: existing.full_name||existing.username });
-      } else {
-        await run('INSERT OR IGNORE INTO league_members (league_id,user_id) VALUES (?,?)', [data.league.id, existing.id]);
-        await createNotification(existing.id, 'info', `🏅 Added to ${data.league.name}`,
-          `${req.session.username} added you to the league ${data.league.name}.`, `/leagues/${data.league.id}`);
-        added++;
-        details.push({ email, status: 'added', name: existing.full_name||existing.username });
+        details.push({ email, status: 'already_enrolled', name: player.full_name||player.username });
+        continue;
       }
-    } else {
-      await run('DELETE FROM league_invites WHERE league_id=? AND email=?', [data.league.id, email]);
-      const token = crypto.randomBytes(24).toString('hex');
-      const expires = new Date(Date.now() + 48*60*60*1000).toISOString();
-      await run('INSERT INTO league_invites (league_id,email,token,invited_by,expires_at) VALUES (?,?,?,?,?)',
-        [data.league.id, email, token, uid, expires]);
-      const inviteUrl = `${req.protocol}://${req.get('host')}/league-invite/${token}`;
-      try {
-        await notify.sendLeagueInviteEmail({ to: email, leagueName: data.league.name, inviterName: req.session.username, inviteUrl });
-      } catch(e) {
-        console.log(`[Bulk invite] ${email} → ${inviteUrl}`);
-      }
-      invited++;
-      details.push({ email, status: 'invited', name: name||null });
+      added++;
+      details.push({ email, status: 'added', name: player.full_name||player.username });
     }
+
+    await run('INSERT OR IGNORE INTO league_members (league_id,user_id) VALUES (?,?)', [data.league.id, player.id]);
+    await createNotification(player.id, 'info', `🏅 Added to ${data.league.name}`,
+      `${req.session.username} enrolled you in ${data.league.name}.`, `/leagues/${data.league.id}`);
   }
 
-  const summary = [`${added} added`, `${invited} invited`, skipped > 0 ? `${skipped} already enrolled` : null]
-    .filter(Boolean).join(', ');
+  const summary = [
+    added   > 0 ? `${added} added`   : null,
+    created > 0 ? `${created} created` : null,
+    skipped > 0 ? `${skipped} skipped` : null
+  ].filter(Boolean).join(', ');
   return reSettings(errors.length ? errors.join(' | ') : null,
     `Upload complete: ${summary}.`,
-    { added, invited, skipped, errors, details });
+    { added, created, skipped, errors, details });
 });
 
 app.post('/leagues/:id/invite', requireAuth, async (req,res) => {

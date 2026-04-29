@@ -48,7 +48,7 @@ const ENROLL_LABEL = {open:'Open',invite_only:'Invite Only',closed:'Closed'};
     <!-- Invite players -->
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">✉️ Invite Players</div><div class="card-sub"><%= members.length %> / <%= playerLimit %> players enrolled</div></div>
+        <div><div class="card-title">✉️ Invite Player</div><div class="card-sub"><%= members.length %> / <%= playerLimit %> players enrolled</div></div>
       </div>
       <% if(members.length >= plan.playerLimit && plan.playerLimit!==9999){ %>
       <div style="background:#fef9c3;border:1px solid #fef08a;border-radius:6px;padding:10px 12px;font-size:13px;color:#854d0e;margin-bottom:12px;">⚠️ Player limit reached. <a href="#plans" style="color:#854d0e;font-weight:600;">Upgrade your plan</a> to invite more players.</div>
@@ -59,7 +59,7 @@ const ENROLL_LABEL = {open:'Open',invite_only:'Invite Only',closed:'Closed'};
       </form>
       <% } %>
 
-      <% if(invites.length>0){ %>
+      <% if(invites && invites.length>0){ %>
       <div style="margin-top:14px;border-top:1px solid var(--gray-100);padding-top:12px;">
         <div style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Pending invites</div>
         <% invites.forEach(inv=>{ %>
@@ -71,6 +71,70 @@ const ENROLL_LABEL = {open:'Open',invite_only:'Invite Only',closed:'Closed'};
       </div>
       <% } %>
       <p style="font-size:12px;color:var(--gray-400);margin-top:10px;">An email invite link is sent. If email is not configured, the link prints to the server console.</p>
+    </div>
+
+    <!-- Bulk Upload Players -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📤 Bulk Upload Players</div>
+          <div class="card-sub">Add multiple players at once via CSV</div>
+        </div>
+      </div>
+
+      <% if(uploadResult){ %>
+      <!-- Upload results -->
+      <div style="margin-bottom:14px;border-radius:8px;overflow:hidden;border:1px solid var(--gray-100);">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);text-align:center;background:var(--gray-50);padding:10px 0;border-bottom:1px solid var(--gray-100);">
+          <div><div style="font-size:20px;font-weight:800;color:var(--green-600);"><%= uploadResult.added %></div><div style="font-size:11px;color:var(--gray-500);">Added</div></div>
+          <div><div style="font-size:20px;font-weight:800;color:#7c3aed;"><%= uploadResult.created %></div><div style="font-size:11px;color:var(--gray-500);">Created</div></div>
+          <div><div style="font-size:20px;font-weight:800;color:var(--gray-400);"><%= uploadResult.skipped %></div><div style="font-size:11px;color:var(--gray-500);">Skipped</div></div>
+        </div>
+        <% if(uploadResult.details && uploadResult.details.length>0){ %>
+        <div style="max-height:180px;overflow-y:auto;">
+          <% uploadResult.details.forEach(d=>{ %>
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--gray-50);font-size:12px;">
+            <%
+              const ic = d.status==='added'?'var(--green-100)':d.status==='created'?'#ede9fe':'var(--gray-100)';
+              const tc = d.status==='added'?'var(--green-700)':d.status==='created'?'#7c3aed':'var(--gray-400)';
+              const lbl = d.status==='added'?'Added':d.status==='created'?'Created':d.status==='already_enrolled'?'Enrolled':'Skipped';
+              const icon = d.status==='added'||d.status==='created'?'✓':'–';
+            %>
+            <span style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;background:<%= ic %>;color:<%= tc %>;">
+              <%= icon %>
+            </span>
+            <span style="flex:1;color:var(--gray-700);"><%= d.name||d.email %></span>
+            <span style="font-size:11px;color:var(--gray-400);"><%= d.email %></span>
+            <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:<%= ic %>;color:<%= tc %>;">
+              <%= lbl %>
+            </span>
+          </div>
+          <% }) %>
+        </div>
+        <% } %>
+      </div>
+      <% } %>
+
+      <form method="POST" action="/leagues/<%= league.id %>/bulk-upload" id="bulkUploadForm">
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label">Pick a CSV file or paste data below</label>
+          <input type="file" id="csvFileInput" accept=".csv,.txt" style="display:block;margin-bottom:8px;font-size:13px;color:var(--gray-600);cursor:pointer;" onchange="readCSVFile(this)"/>
+        </div>
+        <div class="form-group">
+          <textarea class="form-input" name="csv_data" id="csvTextarea" rows="5"
+            placeholder="One player per line. Formats accepted:&#10;email@example.com&#10;John Smith, john@example.com&#10;jane@example.com"></textarea>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <p style="font-size:12px;color:var(--gray-400);margin:0;">
+            Only registered users are added. Emails not found in the system are skipped.
+          </p>
+          <button type="submit" class="btn btn-primary btn-sm">Upload Players</button>
+        </div>
+      </form>
+
+      <div style="margin-top:12px;padding:10px 12px;background:var(--gray-50);border-radius:6px;font-size:12px;color:var(--gray-500);">
+        <strong style="color:var(--gray-600);">CSV format:</strong> one row per player — <code>email</code> or <code>Name, email</code>. Only existing TennisTrack accounts are added.
+      </div>
     </div>
   </div>
 
@@ -131,4 +195,15 @@ const ENROLL_LABEL = {open:'Open',invite_only:'Invite Only',closed:'Closed'};
 </div>
 
 <style>@media(max-width:640px){.settings-grid{grid-template-columns:1fr!important;}}</style>
+<script>
+function readCSVFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('csvTextarea').value = e.target.result.trim();
+  };
+  reader.readAsText(file);
+}
+</script>
 <%- include('layout_bottom') %>

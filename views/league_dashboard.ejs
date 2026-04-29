@@ -1,0 +1,343 @@
+<%
+  function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+  function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
+  const CAT_LABEL={mens_singles:"Men's Singles",mens_doubles:"Men's Doubles",womens_singles:"Women's Singles",womens_doubles:"Women's Doubles",mixed_doubles:"Mixed Doubles",open:"Open"};
+  const rankMedal = r => r===0?'🥇':r===1?'🥈':r===2?'🥉':'';
+  const cat = league.category||'open';
+  const isDoublesCat = ['mens_doubles','womens_doubles','mixed_doubles'].includes(cat);
+  const showTeams = teamStandings && isDoublesCat;
+  const standingRows = showTeams ? teamStandings : standings;
+%>
+<%- include('layout_top',{title:league.name+' — Dashboard',page:'leagues',user}) %>
+
+<!-- Breadcrumb + header -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+  <div>
+    <div style="font-size:13px;color:var(--gray-400);margin-bottom:4px;">
+      <a href="/leagues" style="color:var(--gray-400);text-decoration:none;">Leagues</a>
+      <span style="margin:0 6px;">›</span>
+      <a href="/leagues/<%= league.id %>" style="color:var(--gray-400);text-decoration:none;"><%= league.name %></a>
+      <span style="margin:0 6px;">›</span>
+      <span style="color:var(--gray-600);">Dashboard</span>
+    </div>
+    <h2 style="margin:0;font-size:22px;font-weight:800;color:var(--gray-800);"><%= league.name %></h2>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;background:<%= plan.bg %>;color:<%= plan.color %>;"><%= plan.label %></span>
+      <span style="font-size:12px;color:var(--gray-500);"><%= CAT_LABEL[cat] %></span>
+      <span style="font-size:12px;color:<%= league.status==='active'?'var(--green-600)':'var(--gray-400)' %>;font-weight:600;">● <%= league.status==='active'?'Active':'Ended' %></span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="/leagues/<%= league.id %>" class="btn btn-outline btn-sm">← League</a>
+    <% if(isCreator){ %><a href="/leagues/<%= league.id %>/settings" class="btn btn-outline btn-sm">⚙️ Settings</a><% } %>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="stats-grid" style="margin-bottom:20px;">
+  <div class="stat-card">
+    <div class="stat-label">Matches Played</div>
+    <div class="stat-value"><%= totalMatches %></div>
+    <% if(singlesCount>0||doublesCount>0){ %><div style="font-size:11px;color:var(--gray-400);margin-top:2px;"><%= singlesCount %>S · <%= doublesCount %>D</div><% } %>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Players Enrolled</div>
+    <div class="stat-value"><%= members.length %></div>
+    <% if(activePlayers<members.length){ %><div style="font-size:11px;color:var(--gray-400);margin-top:2px;"><%= activePlayers %> active</div><% } %>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Matches Decided</div>
+    <div class="stat-value green"><%= decidedMatches %></div>
+    <% if(totalMatches>0){ %><div style="font-size:11px;color:var(--gray-400);margin-top:2px;"><%= Math.round(decidedMatches/totalMatches*100) %>% have a winner</div><% } %>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Points Awarded</div>
+    <div class="stat-value" style="color:<%= plan.color %>;"><%= totalPoints %></div>
+    <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">Win = 2 pts</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:20px;" class="ld-main-grid">
+
+  <!-- LEFT column -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Full Standings -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏆 Standings</div>
+        <a href="/leagues/<%= league.id %>" class="btn btn-outline btn-sm">Full view</a>
+      </div>
+      <% if(standingRows.length===0){ %>
+      <div class="empty-state" style="padding:24px;"><div class="empty-icon">📊</div><div class="empty-text">No matches yet — log the first match!</div></div>
+      <% } else { %>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="color:var(--gray-400);border-bottom:1px solid var(--gray-100);">
+            <th style="text-align:left;padding:6px 4px;font-weight:500;width:28px;">#</th>
+            <th style="text-align:left;padding:6px 4px;font-weight:500;"><%= showTeams?'Team':'Player' %></th>
+            <th style="text-align:center;padding:6px 4px;font-weight:500;">P</th>
+            <th style="text-align:center;padding:6px 4px;font-weight:500;">W</th>
+            <th style="text-align:center;padding:6px 4px;font-weight:500;">L</th>
+            <th style="text-align:center;padding:6px 4px;font-weight:500;">Win%</th>
+            <th style="text-align:center;padding:6px 4px;font-weight:500;">Pts</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% standingRows.forEach((s,i)=>{ %>
+          <% const isMe = showTeams ? (s.ids&&s.ids.includes(uid)) : s.id===uid; %>
+          <% const pct  = s.played>0 ? Math.round(s.wins/s.played*100) : 0; %>
+          <tr style="border-bottom:1px solid var(--gray-50);<%= isMe?'background:var(--green-50);':'' %>">
+            <td style="padding:8px 4px;font-weight:700;font-size:15px;">
+              <%= i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1 %>
+            </td>
+            <td style="padding:8px 4px;">
+              <% if(showTeams){ %>
+              <span style="font-weight:<%= isMe?'700':'500' %>;color:<%= isMe?'var(--green-700)':'var(--gray-800)' %>;">
+                <%= s.names.join(' & ') %>
+              </span>
+              <% } else { %>
+              <a href="/leagues/<%= league.id %>/player/<%= s.id %>" style="font-weight:<%= isMe?'700':'500' %>;color:<%= isMe?'var(--green-700)':'var(--gray-800)' %>;text-decoration:none;">
+                <%= s.full_name||s.username %>
+              </a>
+              <% } %>
+              <% if(isMe){ %><span style="font-size:10px;color:var(--green-600);margin-left:4px;">(you)</span><% } %>
+            </td>
+            <td style="text-align:center;padding:8px 4px;color:var(--gray-500);"><%= s.played %></td>
+            <td style="text-align:center;padding:8px 4px;color:var(--green-600);font-weight:600;"><%= s.wins %></td>
+            <td style="text-align:center;padding:8px 4px;color:#dc2626;"><%= s.losses %></td>
+            <td style="padding:8px 4px;min-width:70px;">
+              <div style="display:flex;align-items:center;gap:5px;">
+                <div class="winbar" style="flex:1;"><div class="winbar-fill" style="width:<%= pct %>%"></div></div>
+                <span style="font-size:11px;color:var(--gray-500);width:28px;text-align:right;"><%= pct %>%</span>
+              </div>
+            </td>
+            <td style="text-align:center;padding:8px 4px;font-weight:800;color:<%= plan.color %>;font-size:15px;"><%= s.points %></td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% } %>
+    </div>
+
+    <!-- Recent Matches -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎾 Recent Matches</div>
+        <span style="font-size:12px;color:var(--gray-400);">Last <%= recentMatches.length %></span>
+      </div>
+      <% if(recentMatches.length===0){ %>
+      <div class="empty-state" style="padding:24px;"><div class="empty-icon">🎾</div><div class="empty-text">No matches logged yet</div></div>
+      <% } else { %>
+      <div class="match-list">
+        <% recentMatches.forEach(m=>{ %>
+        <%
+          const isD = m.match_type==='doubles';
+          const onT1 = m.player1_id===uid||m.player1_partner_id===uid;
+          const onT2 = m.player2_id===uid||m.player2_partner_id===uid;
+          const involved = onT1||onT2;
+          const t1won = m.winner_id&&(m.winner_id===m.player1_id||m.winner_id===m.player1_partner_id);
+          const t2won = m.winner_id&&(m.winner_id===m.player2_id||m.winner_id===m.player2_partner_id);
+          const myWin  = involved&&((onT1&&t1won)||(onT2&&t2won));
+          const myLoss = involved&&m.winner_id&&!myWin;
+          const oc = myWin?'win':myLoss?'loss':'nr';
+          const t1label = isD&&m.p1partnername?`${m.p1name} & ${m.p1partnername}`:m.p1name;
+          const t2label = isD&&m.p2partnername?`${m.p2name} & ${m.p2partnername}`:m.p2name;
+          const winLabel = t1won?t1label:t2won?t2label:null;
+        %>
+        <div class="match-row">
+          <% if(involved){ %>
+          <div class="match-outcome outcome-<%= oc %>"><%= oc==='win'?'W':oc==='loss'?'L':'–' %></div>
+          <% } else { %><div style="width:32px;text-align:center;font-size:14px;">🎾</div><% } %>
+          <div class="match-vs" style="flex:1;min-width:0;">
+            <div class="vs-text" style="font-size:13px;"><strong><%= t1label %></strong> vs <strong><%= t2label %></strong></div>
+            <div class="vs-sub">
+              <%= fmtDate(m.played_at) %>
+              <% if(m.venue){ %> · 📍 <%= m.venue %><% } %>
+              <% if(winLabel){ %> · 🏆 <%= winLabel %><% } %>
+            </div>
+          </div>
+          <span class="match-surface <%= surfaceClass(m.surface) %>"><%= m.surface %></span>
+          <div class="match-score"><%= m.score %></div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- RIGHT column -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Top Performers -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">⭐ Top Performers</div></div>
+
+      <% if(topWins.length===0){ %>
+      <div class="empty-state" style="padding:20px;"><div class="empty-icon">⭐</div><div class="empty-text">Play matches to see leaders</div></div>
+      <% } else { %>
+
+      <!-- Most Wins -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px;">Most Wins</div>
+        <% topWins.forEach((s,i)=>{ const isMe=s.id===uid; %>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--gray-50);">
+          <span style="font-size:16px;width:22px;text-align:center;"><%= rankMedal(i)||('#'+(i+1)) %></span>
+          <span style="flex:1;font-size:13px;font-weight:<%= isMe?'700':'400' %>;color:<%= isMe?'var(--green-700)':'var(--gray-700)' %>;">
+            <%= s.full_name||s.username %>
+          </span>
+          <span style="font-size:13px;font-weight:700;color:var(--green-600);"><%= s.wins %> W</span>
+        </div>
+        <% }) %>
+      </div>
+
+      <% if(topWinRate.length>0){ %>
+      <!-- Best Win Rate -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px;">Best Win Rate <span style="font-weight:400;">(min. 2 played)</span></div>
+        <% topWinRate.forEach((s,i)=>{ const isMe=s.id===uid; %>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--gray-50);">
+          <span style="font-size:16px;width:22px;text-align:center;"><%= rankMedal(i)||('#'+(i+1)) %></span>
+          <span style="flex:1;font-size:13px;font-weight:<%= isMe?'700':'400' %>;color:<%= isMe?'var(--green-700)':'var(--gray-700)' %>;">
+            <%= s.full_name||s.username %>
+          </span>
+          <span style="font-size:13px;font-weight:700;color:var(--green-600);"><%= s.winRate %>%</span>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <!-- Most Active -->
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px;">Most Active</div>
+        <% topActive.filter(s=>s.played>0).forEach((s,i)=>{ const isMe=s.id===uid; %>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--gray-50);">
+          <span style="font-size:16px;width:22px;text-align:center;"><%= rankMedal(i)||('#'+(i+1)) %></span>
+          <span style="flex:1;font-size:13px;font-weight:<%= isMe?'700':'400' %>;color:<%= isMe?'var(--green-700)':'var(--gray-700)' %>;">
+            <%= s.full_name||s.username %>
+          </span>
+          <span style="font-size:13px;color:var(--gray-500);"><%= s.played %> played</span>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+
+    <!-- Top Venues -->
+    <% if(topVenues.length>0){ %>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📍 Top Locations</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;">
+        <% topVenues.forEach(([venue,count])=>{ const pct=totalMatches>0?Math.round(count/totalMatches*100):0; %>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;">
+            <span style="color:var(--gray-700);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%;"><%= venue %></span>
+            <span style="color:var(--gray-400);">× <%= count %></span>
+          </div>
+          <div class="winbar"><div class="winbar-fill" style="width:<%= pct %>%;background:#6366f1;"></div></div>
+        </div>
+        <% }) %>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- Charts -->
+    <% if(totalMatches>0){ %>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎾 Court Types</div></div>
+      <div style="position:relative;height:180px;display:flex;align-items:center;justify-content:center;">
+        <canvas id="surfaceDoughnut"></canvas>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;padding:10px 0 2px;font-size:12px;color:var(--gray-500);">
+        <% chartData.surfaceLabels.forEach((s,i)=>{ %>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:<%= ['#16a34a','#f97316','#3b82f6','#8b5cf6','#ec4899'][i%5] %>;"></span><%= s %> (<%= chartData.surfaceCounts[i] %>)</span>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">📅 Monthly Activity</div><span style="font-size:12px;color:var(--gray-400);">Last 6 months</span></div>
+      <div style="position:relative;height:150px;">
+        <canvas id="monthlyBar"></canvas>
+      </div>
+    </div>
+
+    <% if(singlesCount>0&&doublesCount>0){ %>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Singles vs Doubles</div></div>
+      <div style="position:relative;height:140px;display:flex;align-items:center;justify-content:center;">
+        <canvas id="typeDoughnut"></canvas>
+      </div>
+      <div style="display:flex;justify-content:center;gap:16px;font-size:12px;color:var(--gray-500);padding:8px 0 2px;">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#16a34a;"></span>Singles (<%= singlesCount %>)</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#7c3aed;"></span>Doubles (<%= doublesCount %>)</span>
+      </div>
+    </div>
+    <% } %>
+    <% } %>
+
+  </div>
+</div>
+
+<style>
+  @media(max-width:700px){.ld-main-grid{grid-template-columns:1fr!important;}}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const cd = <%- JSON.stringify(chartData) %>;
+  const COLORS = ['#16a34a','#f97316','#3b82f6','#8b5cf6','#ec4899'];
+  const GRAY = '#9ca3af';
+  Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+  Chart.defaults.font.size = 12;
+
+  <% if(totalMatches>0){ %>
+  // Surface doughnut
+  new Chart(document.getElementById('surfaceDoughnut'), {
+    type: 'doughnut',
+    data: {
+      labels: cd.surfaceLabels.map(s=>s.charAt(0).toUpperCase()+s.slice(1)),
+      datasets: [{ data: cd.surfaceCounts, backgroundColor: COLORS, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      cutout: '65%', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // Monthly bar
+  new Chart(document.getElementById('monthlyBar'), {
+    type: 'bar',
+    data: {
+      labels: cd.monthLabels,
+      datasets: [{ label: 'Matches', data: cd.monthCounts, backgroundColor: '#86efac', borderRadius: 4, barPercentage: 0.6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: GRAY } },
+        y: { beginAtZero: true, ticks: { stepSize: 1, color: GRAY }, grid: { color: '#f3f4f6' } }
+      }
+    }
+  });
+
+  <% if(singlesCount>0&&doublesCount>0){ %>
+  // Singles vs Doubles doughnut
+  new Chart(document.getElementById('typeDoughnut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Singles','Doubles'],
+      datasets: [{ data: [cd.singlesCount, cd.doublesCount], backgroundColor: ['#16a34a','#7c3aed'], borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      cutout: '65%', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }
+    }
+  });
+  <% } %>
+  <% } %>
+})();
+</script>
+<%- include('layout_bottom') %>
