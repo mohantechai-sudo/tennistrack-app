@@ -2,15 +2,24 @@
 const nodemailer = require('nodemailer');
 const cfg = require('./config');
 
-// ── Email ─────────────────────────────────────────────────────────────────
+// ── Nodemailer (Microsoft 365 SMTP) ──────────────────────────────────────
 let transporter = null;
 if (cfg.EMAIL.enabled) {
   transporter = nodemailer.createTransport({
-    host: cfg.EMAIL.host,
-    port: cfg.EMAIL.port,
-    secure: cfg.EMAIL.secure,
+    host:       cfg.EMAIL.host,
+    port:       cfg.EMAIL.port,
+    secure:     false,       // STARTTLS — NOT SSL
+    requireTLS: true,        // M365 requires STARTTLS upgrade
     auth: { user: cfg.EMAIL.user, pass: cfg.EMAIL.pass },
+    tls: { ciphers: 'SSLv3', rejectUnauthorized: true },
   });
+  // Verify SMTP connection at startup so misconfiguration surfaces immediately
+  transporter.verify((err) => {
+    if (err) console.error('[Email] SMTP connection failed:', err.message);
+    else     console.log('[Email] SMTP ready —', cfg.EMAIL.user);
+  });
+} else {
+  console.warn('[Email] Disabled — set EMAIL_USER and EMAIL_PASS to enable verification emails.');
 }
 
 async function sendEmail({ to, subject, html }) {
@@ -19,9 +28,35 @@ async function sendEmail({ to, subject, html }) {
     await transporter.sendMail({ from: cfg.EMAIL.from, to, subject, html });
     return { ok: true };
   } catch (e) {
-    console.error('[Email]', e.message);
+    console.error('[Email] Send failed:', e.message);
     return { ok: false, reason: e.message };
   }
+}
+
+// ── Email Verification ────────────────────────────────────────────────────
+async function sendVerificationEmail({ to, username, verifyUrl }) {
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#14532d,#166534);padding:28px;text-align:center;">
+        <div style="font-size:36px;">🎾</div>
+        <h1 style="color:#86efac;margin:10px 0 0;font-size:22px;font-weight:700;">Verify your email</h1>
+      </div>
+      <div style="padding:28px;">
+        <p style="font-size:15px;color:#1f2937;">Hi <strong>${username}</strong>,</p>
+        <p style="font-size:14px;color:#374151;line-height:1.6;">Thanks for joining TennisTrack! Click the button below to verify your email address and activate your account. This link expires in <strong>24 hours</strong>.</p>
+        <div style="text-align:center;margin:30px 0;">
+          <a href="${verifyUrl}" style="background:#16a34a;color:#fff;text-decoration:none;padding:13px 32px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">✅ Verify Email Address</a>
+        </div>
+        <p style="font-size:12px;color:#9ca3af;">If you didn't create a TennisTrack account, you can safely ignore this email.</p>
+        <p style="font-size:11px;color:#9ca3af;word-break:break-all;margin-top:8px;">Or copy this link: <a href="${verifyUrl}" style="color:#6b7280;">${verifyUrl}</a></p>
+      </div>
+      <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:14px 28px;text-align:center;">
+        <p style="font-size:11px;color:#9ca3af;margin:0;">TennisTrack · Account Verification</p>
+      </div>
+    </div>`;
+  const result = await sendEmail({ to, subject: 'Verify your TennisTrack email address', html });
+  if (!result.ok) console.log('[Verification] Email failed — verify URL:', verifyUrl);
+  return result;
 }
 
 // ── Twilio (SMS + WhatsApp) ───────────────────────────────────────────────
@@ -225,4 +260,4 @@ async function sendPlayerWelcomeEmail({ to, fullName, username, tempPassword, le
   return sendEmail({ to, subject: `Your TennisTrack account for ${leagueName}`, html });
 }
 
-module.exports = { sendEmail, sendSMS, sendWhatsApp, notifyMatchScheduled, notifyMatchReminder, notifyMatchCancelled, sendPasswordResetEmail, sendClubInviteEmail, sendLeagueInviteEmail, sendPlayerWelcomeEmail };
+module.exports = { sendEmail, sendSMS, sendWhatsApp, notifyMatchScheduled, notifyMatchReminder, notifyMatchCancelled, sendPasswordResetEmail, sendClubInviteEmail, sendLeagueInviteEmail, sendPlayerWelcomeEmail, sendVerificationEmail };

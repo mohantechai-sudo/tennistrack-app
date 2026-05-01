@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Verify your email — TennisTrack</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card" style="max-width:460px;">
+    <div class="auth-logo">
+      <div class="logo-circle" style="font-size:32px;">📧</div>
+      <h1>Check your inbox</h1>
+      <p>We sent a verification link to activate your account</p>
+    </div>
+
+    <% if (resent) { %>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:center;">
+      <span style="font-size:20px;">✅</span>
+      <div style="font-size:13px;color:#166534;">Verification email resent! Check your inbox (and spam folder).</div>
+    </div>
+    <% } %>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-bottom:20px;">
+      <% if (email) { %>
+      <p style="font-size:14px;color:#374151;margin:0 0 8px;">We sent a link to:<br/><strong style="color:#1f2937;font-size:15px;"><%= email %></strong></p>
+      <% } %>
+      <ul style="font-size:13px;color:#6b7280;margin:10px 0 0;padding-left:18px;line-height:1.8;">
+        <li>Click the link in the email to verify your account</li>
+        <li>The link expires in <strong>24 hours</strong></li>
+        <li>Check your spam / junk folder if you don't see it</li>
+      </ul>
+    </div>
+
+    <% if (email) { %>
+    <form method="POST" action="/resend-verification" style="margin-bottom:16px;">
+      <input type="hidden" name="email" value="<%= email %>"/>
+      <button type="submit" class="btn btn-outline btn-full">↩ Resend verification email</button>
+    </form>
+    <% } %>
+
+    <p style="text-align:center;font-size:13px;color:#6b7280;">
+      Already verified? <a href="/login" style="color:#16a34a;font-weight:500;">Sign in</a>
+    </p>
+    <p style="text-align:center;font-size:13px;color:#6b7280;margin-top:6px;">
+      Wrong email? <a href="/register" style="color:#6b7280;">Register again</a>
+    </p>
+  </div>
+</div>
+</body>
+</html>

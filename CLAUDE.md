@@ -8,7 +8,7 @@
 | Database | SQLite3 (promise-wrapped, single file) |
 | Templates | EJS (server-rendered) |
 | Auth | express-session (7-day cookie), bcryptjs |
-| Email | Nodemailer (Gmail SMTP) |
+| Email | Nodemailer (Microsoft 365 SMTP) |
 | SMS/WhatsApp | Twilio |
 | Charts | Chart.js 4 (CDN) |
 | Scheduling | node-cron |
@@ -24,6 +24,7 @@
 | `server.js` | All routes, DB init, middleware, CRON |
 | `notifications.js` | Email / SMS / WhatsApp helper functions |
 | `config.js` | SMTP, Twilio, session secret (read from env vars) |
+| `.env` | Local environment variables (not committed — loaded by `dotenv`) |
 | `views/` | EJS templates |
 | `public/css/style.css` | Main stylesheet (Wimbledon green palette) |
 
@@ -35,12 +36,19 @@
 |----------|---------|---------|
 | `SESSION_SECRET` | Express session secret | `tennis-secret-2024-change-me` |
 | `PORT` | Server port | `3000` |
-| `EMAIL_USER` | Gmail SMTP username | — (disables email if unset) |
-| `EMAIL_PASS` | Gmail SMTP password | — |
+| `EMAIL_USER` | M365 mailbox address (enables email + verification when set with `EMAIL_PASS`) | — |
+| `EMAIL_PASS` | M365 password or app password | — |
+| `EMAIL_HOST` | SMTP host | `smtp.office365.com` |
+| `EMAIL_PORT` | SMTP port | `587` |
+| `EMAIL_FROM` | Sender display name + address | `TennisTrack <EMAIL_USER>` |
 | `TWILIO_SID` | Twilio account SID | — (disables SMS if unset) |
 | `TWILIO_TOKEN` | Twilio auth token | — |
 | `TWILIO_FROM_SMS` | Twilio SMS sender number | — |
 | `TWILIO_FROM_WHATSAPP` | Twilio WhatsApp sender | `whatsapp:+14155238886` |
+
+Email is **enabled** only when both `EMAIL_USER` and `EMAIL_PASS` are set. When enabled, account verification is required for all new non-admin registrations. STARTTLS on port 587; `secure: false`.
+
+Credentials are loaded from a `.env` file in the project root via `dotenv` (`require('dotenv').config()` is the first line of `server.js`). Never commit `.env` — ensure it is listed in `.gitignore`.
 
 ---
 
@@ -60,7 +68,8 @@
 ### users
 ```
 id, username (UNIQUE), email (UNIQUE), password (bcrypt),
-full_name, phone, whatsapp_enabled (0/1), is_admin (0/1), created_at
+full_name, phone, whatsapp_enabled (0/1), is_admin (0/1),
+email_verified (0/1, DEFAULT 1 for existing rows), created_at
 ```
 
 ### matches
@@ -104,6 +113,12 @@ title, message, link, is_read (0/1), created_at
 ```
 id, user_id, token (UNIQUE, 64-char hex), expires_at (1 hour)
 ```
+
+### email_verification_tokens
+```
+id, user_id, token (UNIQUE, 64-char hex), expires_at (24 hours)
+```
+One active token per user. Replaced on each resend request.
 
 ### leagues
 ```
@@ -214,11 +229,14 @@ Plan limit is enforced at invite acceptance and join time. Upgrade path: free �
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/` | Redirect to `/dashboard` or `/login` |
-| GET/POST | `/register` | Sign up (first user auto-becomes admin) |
-| GET/POST | `/login` | Log in |
+| GET/POST | `/register` | Sign up (first user auto-becomes admin; others redirected to verify-pending when email enabled) |
+| GET/POST | `/login` | Log in; blocks unverified users with resend option |
 | GET | `/logout` | Destroy session |
 | GET/POST | `/forgot-password` | Send password reset email (1-hour token) |
 | GET/POST | `/reset-password/:token` | Complete password reset |
+| GET | `/verify-pending` | "Check your inbox" page shown after registration; accepts `?email=` and `?resent=1` |
+| GET | `/verify-email/:token` | Verifies 24-hour token → sets `email_verified=1` → shows success/error page |
+| POST | `/resend-verification` | Deletes old token, issues fresh 24-hour token, resends verification email |
 
 ### Dashboard & Profile
 | Method | Route | Description |
@@ -322,6 +340,7 @@ Plan limit is enforced at invite acceptance and join time. Upgrade path: free �
 | `getLeagueProposals(leagueId, uid)` | Fetches all non-cancelled league_proposals for the user; returns `{ incoming, outgoing, accepted, all }` with slots pre-attached. Called from both the calendar route and `GET /leagues/:id` (as `calProposals`). |
 | `getProposalsForUser(uid)` | Fetches personal match_proposals (schedule page); returns `{ incoming, outgoing }` with slots attached |
 | `createNotification(userId, type, title, message, link)` | Inserts in-app notification row |
+| `sendVerificationEmail({ to, username, verifyUrl })` | Sends verification email via Nodemailer (M365); logs URL to console if send fails |
 
 ---
 
@@ -331,8 +350,10 @@ Plan limit is enforced at invite acceptance and join time. Upgrade path: free �
 |------|------|
 | `layout_top.ejs` | Nav/header partial |
 | `layout_bottom.ejs` | Footer partial |
-| `login.ejs` | Login form |
-| `register.ejs` | Registration form |
+| `login.ejs` | Login form; shows yellow unverified-email warning with inline Resend button when `unverifiedEmail` is set |
+| `register.ejs` | Registration form; includes phone field and verification notice |
+| `verify_pending.ejs` | "Check your inbox" page after registration; shows resent confirmation banner; Resend button |
+| `verify_email.ejs` | Verification result page — success (sign-in link) or expired/invalid error |
 | `forgot_password.ejs` | Forgot password form |
 | `reset_password.ejs` | Reset password (token) |
 | `dashboard.ejs` | Main dashboard with charts |
@@ -344,7 +365,7 @@ Plan limit is enforced at invite acceptance and join time. Upgrade path: free �
 | `compare.ejs` | Head-to-head stats |
 | `notifications.ejs` | Notifications list |
 | `leagues.ejs` | Leagues list + create form; status badge includes Draft |
-| `league_detail.ejs` | Standings, matches, teams, pool builder, active pool standings (P1/P2 format + confirmed-date display), Log Match modal, inline Calendar Popup modal (full calendar + proposal sub-modals, IIFE-wrapped JS), Fixtures modal (all pool matchups with schedule/score actions) |
+| `league_detail.ejs` | 7-tab SPA: Overview · Dashboard (stat cards + match history) · Builder (kanban drag-and-drop pool builder with gradient avatar chips, always visible to creator) · Pools (standings + inline schedule/score) · Matches (Pool Fixtures first then Match History; 📅 opens `ldCalModal` popup · ✏️ opens `ldScoreModal` popup) · Calendar (monthly grid + proposals sidebar) · Players (member cards) |
 | `league_dashboard.ejs` | League analytics dashboard |
 | `league_calendar.ejs` | Rich monthly calendar: played matches + confirmed/pending proposals; New Proposal modal; event detail modal |
 | `league_settings.ejs` | League settings (creator-only) |
@@ -365,8 +386,10 @@ Types: `welcome`, `match`, `schedule`, `reminder`, `alert`, `info`
 
 All notifications store a `link` field pointing to the relevant page.
 
-### Email (Nodemailer)
-Sent for: match scheduled, match reminder, match cancelled, password reset, club invite, league invite, bulk-upload welcome.
+### Email (Nodemailer — Microsoft 365 SMTP)
+Sent for: account verification, match scheduled, match reminder, match cancelled, password reset, club invite, league invite, bulk-upload welcome.
+- Enabled when both `EMAIL_USER` and `EMAIL_PASS` are set.
+- Verification emails logged to console (including verify URL) if send fails, so dev environments without email still work.
 
 ### SMS / WhatsApp (Twilio)
 Sent for: match scheduled, match reminder, match cancelled.
@@ -392,40 +415,71 @@ Sent for: match scheduled, match reminder, match cancelled.
 - **Team standings** (doubles leagues): computed dynamically from match data by grouping player partnerships; not stored.
 - **Doubles leagues** (`mens_doubles`, `womens_doubles`, `mixed_doubles`): show team standings, team builder, team→pool drag & drop in pool builder.
 
+### Email Verification
+- Triggered on registration when `cfg.EMAIL.enabled` is `true` (both `EMAIL_USER` and `EMAIL_PASS` set).
+- New user is inserted with `email_verified=0` and redirected to `/verify-pending`.
+- A 24-hour token is stored in `email_verification_tokens`. Clicking the link sets `email_verified=1` and deletes the token.
+- **Login blocks** unverified users — shows a yellow warning with the user's email and an inline **Resend** form (`POST /resend-verification`).
+- **Resend** deletes the old token and issues a fresh 24-hour one (prevents enumeration: silently succeeds even for unknown emails).
+- **Skips verification for**: first admin user, bulk-uploaded players (auto-set `email_verified=1`), and any install where email is not configured (users get `email_verified=1` at insert).
+- All pre-existing accounts in the DB have `email_verified=1` via the migration `DEFAULT 1`.
+- Verification URL is always logged to the server console so dev environments without SMTP can still test the flow manually.
+
 ### League Lifecycle (draft → active → ended)
 - New leagues always start as `draft`. Creator builds teams and assigns them to pools using the drag-and-drop pool builder.
 - **"Save & Start League"** button in the pool section saves pools and transitions to `active` in one POST (via `start_after_save=1` on the pools/save form).
 - The standalone **"🚀 Start League"** header button transitions `draft → active` without saving pools.
-- Once `active`, pool standings tables appear (replacing the builder). Pools are locked; the builder is hidden unless the creator is active with zero pools (fallback to allow late setup).
+- Once `active`, Pools and Matches tabs appear. The Builder tab remains visible to the creator at all times.
 - `ended` is irreversible.
 
 ### Pool Builder
 - **Pool save** replaces all existing pools for the league atomically (delete all → reinsert).
-- **Drag & drop**: singles leagues drag player chips; doubles leagues drag team chips (both players added at once).
-- In **draft**, creator sees the interactive builder. Members see a read-only view if pools exist.
-- In **active**, creator sees the builder only if no pools exist yet (late-setup fallback).
+- **Drag & drop**: singles leagues drag player chips; doubles leagues drag team chips (both players added at once). Chips use gradient avatar colors (`BLD_PAL` palette) assigned per-member via `bldColMap`.
+- The **Builder tab** (`showBuilder = isCreator`) is always visible to the creator regardless of league status or whether pools already exist. Members never see the Builder tab.
+- **`ldSavePools`**: collects `{name, color, players}` per pool column. `color` is read from `col.dataset.color` (defaults to `#1d4ed8`). Chip selector is scoped to `.bld-drop-zone .ld-chip` (not the whole column) to avoid false matches. Shows a confirmation dialog if any pool has fewer than 2 players, but allows saving anyway.
 
 ### Active Pool Standings
 - Each pool shown as a card with a standings table: #, Team/Player, P, W, L, Pts, Actions.
 - **Team display**: Doubles teams shown as **"P1 / P2"** (slash-separated player names) with the team name as a smaller subtitle.
 - **Actions column** (creator only):
-  - **📅 (Schedule)**: opens the inline Calendar Popup modal pre-filled with the opposing team's player as the proposal opponent.
-  - **🏆 (Score)**: opens the Score modal to report a played result via `POST /leagues/:id/pool-match`.
+  - **📅 (Schedule)**: opens the `ldCalModal` calendar popup (via `ldCalLink()`) pre-filled with the opposing team/player.
+  - **🏆 (Score)**: opens the `ldScoreModal` popup to report a played result via `POST /leagues/:id/pool-match`.
   - If an accepted `league_proposal` exists for a team, the 📅 button is **replaced** by a confirmed-match block showing: `"P1/P2 vs P3/P4"`, `"📅 Wed, Apr 30 · 2:00 PM"`, and `"Confirmed"` label. The 🏆 button always remains.
 - Singles pool standings show "—" in the Actions column, replaced by confirmed date if a proposal exists.
 - **`POST /leagues/:id/pool-schedule`**: now creates a `league_proposal` with `status='accepted'` (not a `scheduled_match`) so the confirmed date appears in pool standings. Cancels any prior pending/accepted proposal between the same two teams first.
 
-### Log Match Modal (League Detail)
-- The "📝 Log Match" button in the league header opens a modal overlay (visible to members of active leagues).
-- The modal contains the full match logging form: opponent/partner selection, score, surface, date/time, venue, winner. POSTs to `POST /leagues/:id/match`.
+### League Detail SPA — Tab Structure
 
-### Fixtures List (League Detail)
-- The **"📋 Fixtures"** button appears in the league header when the league is active and has at least one pool (visible to members and creator).
-- Opens a modal listing every round-robin matchup per pool, grouped by pool with colour-coded pool header.
-- Each fixture row shows: **#**, **Match** (P1/P2 vs P3/P4 with team name subtitles), **Venue** (from played match or accepted proposal, or "TBD"), **Actions**.
-- Status badges: ✅ score (played) · 📅 date (scheduled/confirmed) · nothing (unplayed).
-- Actions for unplayed fixtures: **📅** closes fixtures modal and opens the Calendar Popup pre-filled with the opponent · **🏆** (creator, doubles only) closes fixtures and opens Score modal pre-filled with the correct pair.
-- Fixture pair data passed to score modal includes only the two relevant teams so dropdowns pre-select correctly.
+`league_detail.ejs` is a 7-tab single-page app. Tabs are shown/hidden via `display:none`; active tab persisted in `location.hash`.
+
+| Tab | `data-tab` | Visible to | Content |
+|-----|-----------|-----------|---------|
+| 📊 Overview | `overview` | everyone | Standings table (team standings for doubles) · last 5 matches · draft status card |
+| 📈 Dashboard | `dashboard` | everyone | Stat cards (matches, players, rank, W/L, top surface) · full match history |
+| 🏗️ Builder | `builder` | creator only (`showBuilder = isCreator`) | Teams section (doubles leagues) · drag-and-drop pool builder · Save / Save & Start buttons |
+| 🏊 Pools | `pools` | active + hasPools | Per-pool standings cards (P, W, L, Pts) · inline fixture rows with 📅 schedule and 🏆 score buttons |
+| 🎾 Matches | `matches` | active | Pool Fixtures (top, only when `hasPools`) then full Match History · per-pool round-robin fixture table with dedicated 📅 Schedule and ✏️ Score columns · creator actions open modal popups |
+| 📅 Calendar | `calendar` | members/creator + active | Monthly JS-rendered grid from `_calEvts` JSON · proposals sidebar (incoming, confirmed, outgoing) · new proposal form |
+| 👥 Players | `players` | everyone | Member cards grid: avatar, name, rank, W/L; links to `/leagues/:id/player/:pid` |
+
+**Tab visibility flags** (computed in EJS scriptlet):
+```
+showBuilder   = isCreator                     // always visible to creator
+showPools     = isActive && hasPools
+showFixtures  = isActive                      // Matches tab visible for ALL active leagues (no pool requirement)
+showCalendar  = (isMember || isCreator) && isActive
+```
+
+### Matches Tab (Fixtures)
+- **Layout**: Pool Fixtures section (only when `hasPools`) rendered first, followed by Match History below.
+- **Pool Fixtures table** columns: **#**, **Match** (team name or P1/P2 format), **Date/Status**, **Score**, **📅 Schedule** (creator only), **✏️ Score** (creator only).
+- Status: ✅ Played date · 📅 confirmed datetime · "— Not scheduled".
+- **Creator actions on unplayed fixtures**:
+  - **📅** column button → calls `ldCalLink(opponentId, label1, label2)` → opens the `ldCalModal` calendar popup with opponent pre-selected.
+  - **✏️** column button → calls `ldOpenScore(lid, t1id, t2id, p1id, p2id, label1, label2)` → opens the `ldScoreModal` popup.
+  - Both columns show "—" for already-played fixtures.
+- **Empty state**: if a pool has fewer than 2 members, shows a message with a "Go to Builder" button instead of the fixtures table.
+- Visible to any active league (`showFixtures = isActive`), even without pools (pool fixtures section is skipped if `!hasPools`).
 
 ### Personal Match Proposals (Schedule Page)
 - The Schedule page has two tabs: **📅 Schedule** (direct scheduling) and **📬 Propose Slots** (multi-slot proposal).
@@ -433,27 +487,46 @@ Sent for: match scheduled, match reminder, match cancelled.
 - Proposer can withdraw pending proposals. Declined/cancelled proposals notify the other party via in-app notification.
 
 ### League Calendar & Proposals
-- **Standalone page**: Accessible via **📅 Calendar** button on the league detail header (members only). Full-page view with the same features as the popup.
-- **Inline Calendar Popup** (on league detail page): opened by the pool standings 📅 button and the Fixtures modal 📅 button. Full monthly grid calendar rendered inside a fixed popup modal — no iframe, no page navigation.
-  - Data: `GET /leagues/:id` now also calls `getLeagueProposals(lid, uid)` and passes `calProposals`; the EJS scriptlet builds `_calEvts` from `lmatches` + `calProposals`.
-  - Nested sub-modals for Event Detail (z-index 1200) and New Proposal (z-index 1200) appear above the calendar popup (z-index 1100). Escape key closes in layers (sub-modal first, then calendar).
-  - All calendar JS is IIFE-wrapped (`ldcXxx` prefix) to avoid conflicts with the page's existing `closeModals()` and other functions.
-- **New Proposal modal opponent dropdown** (both standalone and popup):
-  - Doubles leagues: shows **team names** (`"Team Name (P1 & P2)"`) with `player1_id` as the option value.
-  - When opened from pool standings or fixtures (via `?propose=PLAYER_ID` or `proposeOpp` arg): dropdown is filtered to show **only** the specific opposing team.
-  - When opened manually via "+ New Proposal": shows all teams/members.
+- **Calendar tab** (on league detail page): the 📅 Calendar tab renders a full monthly grid inline — no modal, no iframe, no page navigation. Visible to members/creator of active leagues.
+  - All event data is serialised as `_calEvts` JSON at page load from `lmatches` + `calProposals` (passed from `GET /leagues/:id` via `getLeagueProposals(lid, uid)`).
+  - Month navigation (`ldCalNav`) re-renders the grid from pre-loaded data — no AJAX.
+- **Standalone calendar page** (`/leagues/:id/calendar`): same data and layout, rendered as a full page.
+- **Calendar sidebar** (on both): incoming proposals (slot-by-slot Accept buttons) · confirmed upcoming matches (with Cancel for proposer) · sent proposals (with Withdraw).
+- **New Proposal form** always visible in the sidebar; opponent select shows all members (or pre-filtered to a specific opponent when opened from pool standings/fixtures).
 - Color coding: 🟢 `#536D33` played · 🔵 `#1d4ed8` confirmed · 🟣 `#7c3aed` incoming pending · 🟡 `#d97706` outgoing pending.
-- Hover any future day cell → `+` button → opens New Proposal modal with that date pre-filled at 10:00.
-- Click any event pill → Event Detail modal with contextual actions (Accept/Decline, Withdraw, Reschedule/Cancel).
 - **Reschedule flow**: cancel accepted proposal with `reschedule=1` → server redirects to `/calendar?reschedule=opponent_id` → New Proposal modal auto-opens with opponent pre-selected.
-- Sidebar: incoming proposals (slot-by-slot accept buttons), upcoming confirmed matches, sent proposals.
-- `getLeagueProposals()` used by the standalone calendar route, the inline popup (via `calProposals`), and (accepted only) the pool standings confirmed-date logic.
+- `getLeagueProposals()` used by the standalone calendar route, the Calendar tab (via `calProposals`), and (accepted only) the pool standings confirmed-date logic.
+
+### `ldCalModal` — Calendar Proposal Popup
+Triggered by `ldCalLink(opponentId, label1, label2)` from Pool Fixtures 📅 buttons and Pool Standings 📅 buttons.
+- **Layout**: wide modal (max 920px) — live monthly calendar grid (left) + proposal form (right, 340px).
+- **Calendar left pane**: renders from `_calEvts` with month nav (‹/›/Today). Past dates dimmed and non-clickable. Clicking a future date fills the next empty slot input with `dateStr + 'T10:00'` and flashes it green.
+- **Proposal form right pane**: opponent `<select>` (auto-selected to the clicked opponent), 4 datetime-local slot inputs, venue text input, submit button POSTs to `/leagues/:id/proposals/new`.
+- **Opponent dropdown**: uses `_calTeams` (doubles leagues — team name + "P1 / P2" display, `player1_id` as value) or `_calMembers` (singles — username/full_name + `@handle`). Controlled by `_calIsDoubles` flag.
+- **JS data**: `_calIsDoubles`, `_calTeams`, `_calMembers`, `_calLeagueId` serialized with `<%- JSON.stringify(...) %>` in the page `<script>` block.
+- **Key functions**: `ldCalLink()` (open + pre-select), `ldModalCalRender()` (draw grid to `#calModalGrid`), `ldModalCalNav(dir)` (month nav), `ldModalDayClick(dateStr)` (fill slot), `ldModalClearSlots()` (reset slots on open).
+
+### `ldScoreModal` — Score Entry Popup
+Triggered by `ldOpenScore(lid, t1id, t2id, p1id, p2id, label1, label2, sub1, sub2)` from Pool Fixtures ✏️ buttons and Pool Standings 🏆 buttons.
+- `sub1`/`sub2` are player-name strings (`"P1 / P2"`) for doubles teams; empty for singles. Shown as a subtitle in the modal header and appended to winner options.
+- **Score input** (`#ldScoreInput`): live validation as user types — parses each set (`X-Y`), renders coloured set pills (green ▲ / red ▼), shows set-count summary, and auto-selects the winner dropdown when one side leads.
+- **Quick-add chips**: 14 common set scores (6-0 … 6-7 both ways) — click to append a set; max 5 sets enforced.
+- **Winner select** (`#ldScore_winnerSel`): options show `"Team (P1 / P2)"` for doubles, plain name for singles; auto-selected by `ldScoreValidate()`.
+- **Form submit guard**: `DOMContentLoaded` listener on `ldScoreForm` calls `ldScoreValidate()` and blocks submit if score format is invalid (empty score = walkover, always allowed).
+- Hidden inputs: `#ldScore_t1`, `#ldScore_t2` for team IDs (falls back to player IDs for singles).
+- Form (`id="ldScoreForm"`) action set dynamically to `/leagues/${lid}/pool-match`.
+- Guarded by `<% if(isCreator&&isActive){%>` in EJS.
 
 ### Theming
 - CSS uses a **Wimbledon green** palette as CSS custom properties: `--green-500: #536D33` as the primary brand colour, with a full scale from `--green-50` to `--green-900`.
+
+### Player Name Display Format
+- Doubles pairs are displayed as **`P1/P2`** (slash-separated) throughout all league views — league_detail.ejs standings, match history, builder chips, pool standings sub-labels, and league_player_stats.ejs match history.
+- Never use ` & ` between player names in league contexts.
 
 ### General
 - **Bulk upload:** CSV format is one `email` or `email,Full Name` per line. Skips existing users. Auto-generates temp passwords and sends welcome emails.
 - **Invite tokens:** 48 hours for clubs and leagues; 1 hour for password reset. `crypto.randomBytes(32).toString('hex')` format.
 - **Slug generation:** Club slugs are `kebab-case-name-XXXX` (4-char random hex suffix for uniqueness).
 - **Chart data:** Dashboard charts cover the last 6 calendar months. League dashboard adds surface breakdown and venue breakdown.
+- **EJS `const`/`let` TDZ**: EJS compiles all scriptlet blocks into one JS function. Never use a `const` or `let` variable before the line it is declared — even inside loops — or it will throw `ReferenceError: Cannot access 'x' before initialization`. Declare all computed variables at the top scriptlet block.

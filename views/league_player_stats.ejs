@@ -1,4 +1,5 @@
 <%
+  const pid = player.id;
   function fmtDate(d){return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
   function surfaceClass(s){const m={hard:'surface-hard',clay:'surface-clay',grass:'surface-grass',indoor:'surface-indoor'};return m[s]||'surface-hard';}
   const winRateColor = winRate>=60?'var(--green-600)':winRate>=40?'#d97706':'#dc2626';
@@ -139,8 +140,8 @@
       const pidWon = m.winner_id && ((onT1&&t1won)||(!onT1&&t2won));
       const pidLost = m.winner_id && !pidWon;
       const oc = pidWon?'win':pidLost?'loss':'nr';
-      const t1label = isD&&m.p1partnername ? `${m.p1name} & ${m.p1partnername}` : m.p1name;
-      const t2label = isD&&m.p2partnername ? `${m.p2name} & ${m.p2partnername}` : m.p2name;
+      const t1label = isD&&m.p1partnername ? `${m.p1name}/${m.p1partnername}` : m.p1name;
+      const t2label = isD&&m.p2partnername ? `${m.p2name}/${m.p2partnername}` : m.p2name;
       const winnerLabel = t1won ? t1label : t2won ? t2label : null;
     %>
     <div class="match-row">
@@ -162,7 +163,6 @@
   <% } %>
 </div>
 
-<% const pid = player.id; %>
 <style>
   @media(max-width:640px){
     .sas-grid{grid-template-columns:1fr!important;}

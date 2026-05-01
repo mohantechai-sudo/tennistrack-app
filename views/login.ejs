@@ -17,6 +17,21 @@
     <% if (error) { %>
     <div class="alert alert-error"><%= error %></div>
     <% } %>
+    <% if (unverifiedEmail) { %>
+    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;margin-bottom:18px;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <span style="font-size:20px;flex-shrink:0;">📧</span>
+        <div>
+          <div style="font-weight:600;color:#92400e;font-size:14px;">Email not verified</div>
+          <div style="font-size:13px;color:#78350f;margin-top:3px;">Check your inbox at <strong><%= unverifiedEmail %></strong> and click the verification link to activate your account.</div>
+          <form method="POST" action="/resend-verification" style="margin-top:10px;">
+            <input type="hidden" name="email" value="<%= unverifiedEmail %>"/>
+            <button type="submit" style="font-size:12px;padding:5px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">↩ Resend verification email</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <% } %>
     <form method="POST" action="/login">
       <div class="form-group">
         <label class="form-label">Username or email</label>

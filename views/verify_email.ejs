@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Email Verified — TennisTrack</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card" style="max-width:420px;text-align:center;">
+    <% if (success) { %>
+    <div class="auth-logo">
+      <div class="logo-circle" style="font-size:32px;background:var(--green-100);">✅</div>
+      <h1 style="color:var(--green-700);">Email verified!</h1>
+      <p>Your account is now active. You can sign in.</p>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:20px;font-size:13px;color:#166534;">
+      Your account is active. Start by logging your first match or joining a league.
+    </div>
+    <a href="/dashboard" class="btn btn-primary btn-full" style="display:block;">Go to Dashboard →</a>
+    <% } else { %>
+    <div class="auth-logo">
+      <div class="logo-circle" style="font-size:32px;background:#fee2e2;">❌</div>
+      <h1 style="color:#dc2626;">Link expired</h1>
+      <p>This verification link is invalid or has expired.</p>
+    </div>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px;margin-bottom:20px;font-size:13px;color:#991b1b;">
+      <%= error %>
+    </div>
+    <a href="/login" class="btn btn-outline btn-full" style="display:block;margin-bottom:10px;">Back to sign in</a>
+    <p style="font-size:13px;color:#6b7280;">
+      Need a new link? Sign in and use the <strong>Resend verification email</strong> button.
+    </p>
+    <% } %>
+  </div>
+</div>
+</body>
+</html>

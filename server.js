@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -113,6 +114,46 @@ db.serialize(() => {
     FOREIGN KEY (invited_by) REFERENCES users(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS league_teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL, name TEXT NOT NULL, color TEXT DEFAULT '#1d4ed8',
+    player1_id INTEGER NOT NULL, player2_id INTEGER NOT NULL, created_by INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_pools (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL, name TEXT NOT NULL, color TEXT DEFAULT '#1d4ed8',
+    sort_order INTEGER DEFAULT 0, created_by INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_pool_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_id INTEGER NOT NULL, league_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+    UNIQUE(pool_id, user_id),
+    FOREIGN KEY (pool_id) REFERENCES league_pools(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    league_id INTEGER NOT NULL, proposer_id INTEGER NOT NULL, opponent_id INTEGER NOT NULL,
+    venue TEXT, surface TEXT DEFAULT 'hard', notes TEXT,
+    status TEXT DEFAULT 'pending', accepted_slot_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (league_id) REFERENCES leagues(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_proposal_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL, proposed_at DATETIME NOT NULL, sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (proposal_id) REFERENCES league_proposals(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS match_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposer_id INTEGER NOT NULL, opponent_id INTEGER NOT NULL,
+    player1_partner_id INTEGER, player2_partner_id INTEGER,
+    match_type TEXT DEFAULT 'singles', venue TEXT, surface TEXT DEFAULT 'hard',
+    format TEXT DEFAULT 'best_of_3', notes TEXT,
+    status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (proposer_id) REFERENCES users(id), FOREIGN KEY (opponent_id) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS match_proposal_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL, proposed_at DATETIME NOT NULL, sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (proposal_id) REFERENCES match_proposals(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS league_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     league_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     color TEXT DEFAULT '#1d4ed8',
@@ -140,10 +181,21 @@ db.serialize(() => {
     UNIQUE(pool_id, user_id),
     FOREIGN KEY (pool_id) REFERENCES league_pools(id),
     FOREIGN KEY (user_id) REFERENCES users(id))`);
+  // Email verification tokens
+  db.run(`CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id))`);
+
   // Migrate existing tables — ignored silently if column already exists
+  // DEFAULT 1 so all existing accounts are treated as already verified
+  db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 1`, () => {});
   db.run(`ALTER TABLE matches ADD COLUMN match_type TEXT DEFAULT 'singles'`, () => {});
   db.run(`ALTER TABLE leagues ADD COLUMN plan TEXT DEFAULT 'free'`, () => {});
   db.run(`ALTER TABLE leagues ADD COLUMN enrollment TEXT DEFAULT 'open'`, () => {});
+  db.run(`ALTER TABLE league_matches ADD COLUMN venue TEXT`, () => {});
   db.run(`ALTER TABLE leagues ADD COLUMN category TEXT DEFAULT 'open'`, () => {});
   db.run(`ALTER TABLE scheduled_matches ADD COLUMN match_type TEXT DEFAULT 'singles'`, () => {});
   db.run(`ALTER TABLE scheduled_matches ADD COLUMN player1_partner_id INTEGER`, () => {});
@@ -196,7 +248,7 @@ db.serialize(() => {
   const DEFAULT_ADMIN_EMAIL = 'admin@tennistrack.local';
   const adminHash = bcrypt.hashSync(DEFAULT_ADMIN_PASS, 10);
   db.run(
-    `INSERT OR IGNORE INTO users (username, email, password, full_name, is_admin) VALUES (?, ?, ?, ?, 1)`,
+    `INSERT OR IGNORE INTO users (username, email, password, full_name, is_admin, email_verified) VALUES (?, ?, ?, ?, 1, 1)`,
     [DEFAULT_ADMIN_USER, DEFAULT_ADMIN_EMAIL, adminHash, 'Administrator'],
     function(err) {
       if (!err && this.changes > 0) {
@@ -324,25 +376,76 @@ app.post('/register', async (req,res) => {
   if (!username||!email||!password) return res.render('register',{error:'All fields required.'});
   try {
     const hash = await bcrypt.hash(password, 10);
-    // First user becomes admin automatically
     const countRow = await get('SELECT COUNT(*) as c FROM users');
     const isAdmin = (!countRow || countRow.c === 0) ? 1 : 0;
-    const r = await run('INSERT INTO users (username,email,password,full_name,phone,is_admin) VALUES (?,?,?,?,?,?)',
-      [username, email, hash, full_name||username, phone||null, isAdmin]);
-    req.session.userId = r.lastID; req.session.username = username;
+    // Admin accounts skip verification; others require it when M365 email is configured
+    const needsVerify = !isAdmin && cfg.EMAIL.enabled;
+    const emailVerified = needsVerify ? 0 : 1;
+    const r = await run(
+      'INSERT INTO users (username,email,password,full_name,phone,is_admin,email_verified) VALUES (?,?,?,?,?,?,?)',
+      [username, email, hash, full_name||username, phone||null, isAdmin, emailVerified]);
     await createNotification(r.lastID, 'welcome', '👋 Welcome to TennisTrack!', 'Start by logging your first match or scheduling one.', '/matches/new');
+    if (needsVerify) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24*60*60*1000).toISOString();
+      await run('INSERT INTO email_verification_tokens (user_id,token,expires_at) VALUES (?,?,?)', [r.lastID, token, expiresAt]);
+      const verifyUrl = `${req.protocol}://${req.get('host')}/verify-email/${token}`;
+      console.log(`[Register] Sending verification to ${email} — ${verifyUrl}`);
+      const result = await notify.sendVerificationEmail({ to: email, username, verifyUrl });
+      if (!result.ok) console.warn('[Register] Verification email failed:', result.reason, '— use URL above to verify manually');
+      return res.redirect('/verify-pending?email=' + encodeURIComponent(email));
+    }
+    req.session.userId = r.lastID; req.session.username = username;
     res.redirect('/dashboard');
   } catch(e) { res.render('register',{error: e.message.includes('UNIQUE')?'Username or email taken.':'Registration failed.'}); }
 });
-app.get('/login', (req,res) => res.render('login',{error:null}));
+
+app.get('/login', (req,res) => res.render('login',{error:null, unverifiedEmail:null}));
 app.post('/login', async (req,res) => {
   const { username, password } = req.body;
   const user = await get('SELECT * FROM users WHERE username=? OR email=?', [username,username]);
-  if (!user||!(await bcrypt.compare(password, user.password))) return res.render('login',{error:'Invalid credentials.'});
+  if (!user||!(await bcrypt.compare(password, user.password)))
+    return res.render('login',{error:'Invalid credentials.', unverifiedEmail:null});
+  if (!user.email_verified)
+    return res.render('login',{error:null, unverifiedEmail: user.email});
   req.session.userId = user.id; req.session.username = user.username;
   res.redirect('/dashboard');
 });
 app.get('/logout', (req,res) => { req.session.destroy(); res.redirect('/login'); });
+
+// ── Email Verification ────────────────────────────────────────────────────
+app.get('/verify-pending', (req,res) => {
+  res.render('verify_pending', { email: req.query.email||'', resent: req.query.resent==='1' });
+});
+
+app.get('/verify-email/:token', async (req,res) => {
+  const row = await get(
+    `SELECT * FROM email_verification_tokens WHERE token=? AND datetime(expires_at) > datetime('now')`,
+    [req.params.token]);
+  if (!row) return res.render('verify_email', { success:false, error:'This verification link is invalid or has expired.' });
+  const user = await get('SELECT * FROM users WHERE id=?', [row.user_id]);
+  await run('UPDATE users SET email_verified=1 WHERE id=?', [row.user_id]);
+  await run('DELETE FROM email_verification_tokens WHERE user_id=?', [row.user_id]);
+  // Auto sign-in after verification — no need to log in again
+  req.session.userId   = user.id;
+  req.session.username = user.username;
+  res.render('verify_email', { success:true, error:null });
+});
+
+app.post('/resend-verification', async (req,res) => {
+  const { email } = req.body;
+  const user = await get('SELECT * FROM users WHERE email=?', [email]);
+  // Silently succeed even if email not found (prevents enumeration)
+  if (user && !user.email_verified) {
+    await run('DELETE FROM email_verification_tokens WHERE user_id=?', [user.id]);
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24*60*60*1000).toISOString();
+    await run('INSERT INTO email_verification_tokens (user_id,token,expires_at) VALUES (?,?,?)', [user.id, token, expiresAt]);
+    const verifyUrl = `${req.protocol}://${req.get('host')}/verify-email/${token}`;
+    await notify.sendVerificationEmail({ to: email, username: user.username, verifyUrl });
+  }
+  res.redirect('/verify-pending?email=' + encodeURIComponent(email) + '&resent=1');
+});
 
 // ── Forgot / Reset Password ───────────────────────────────────────────────
 app.get('/forgot-password', (req,res) => res.render('forgot_password', {error:null, success:null}));
@@ -1012,19 +1115,23 @@ app.post('/leagues/:id/match', requireAuth, async (req,res) => {
   const singlesCategories = ['mens_singles','womens_singles'];
   const resolvedType = doublesCategories.includes(cat) ? 'doubles' : singlesCategories.includes(cat) ? 'singles' : (match_type||'singles');
   const isDoubles = resolvedType === 'doubles';
-  if (!opponent_id||!score) return res.render('league_detail',{user,uid,...data,joinErr:null,error:'Opponent and score are required.',success:null});
-  if (isDoubles&&!partner_id) return res.render('league_detail',{user,uid,...data,joinErr:null,error:'Please select your partner.',success:null});
-  if (isDoubles&&!opponent_partner_id) return res.render('league_detail',{user,uid,...data,joinErr:null,error:"Please select the opponent's partner.",success:null});
+  const _emptyCalProposals = {incoming:[],outgoing:[],accepted:[],all:[]};
+  if (!opponent_id||!score) return res.render('league_detail',{user,uid,...data,acceptedProposals:[],calProposals:_emptyCalProposals,joinErr:null,error:'Opponent and score are required.',success:null});
+  if (isDoubles&&!partner_id) return res.render('league_detail',{user,uid,...data,acceptedProposals:[],calProposals:_emptyCalProposals,joinErr:null,error:'Please select your partner.',success:null});
+  if (isDoubles&&!opponent_partner_id) return res.render('league_detail',{user,uid,...data,acceptedProposals:[],calProposals:_emptyCalProposals,joinErr:null,error:"Please select the opponent's partner.",success:null});
   const oid = parseInt(opponent_id);
   const p1pid = isDoubles&&partner_id ? parseInt(partner_id) : null;
   const p2pid = isDoubles&&opponent_partner_id ? parseInt(opponent_partner_id) : null;
-  if (!data.members.some(m=>m.id===oid)) return res.render('league_detail',{user,uid,...data,joinErr:null,error:'Opponent is not a league member.',success:null});
+  if (!data.members.some(m=>m.id===oid)) return res.render('league_detail',{user,uid,...data,acceptedProposals:[],calProposals:_emptyCalProposals,joinErr:null,error:'Opponent is not a league member.',success:null});
   // winner_id: '_opp' marker means opponent team won → use oid
   const resolvedWinner = winner_id ? (winner_id==='_opp' ? oid : parseInt(winner_id)||null) : null;
   await run('INSERT INTO league_matches (league_id,player1_id,player2_id,player1_partner_id,player2_partner_id,winner_id,score,surface,match_type,played_at,venue) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
     [lid,uid,oid,p1pid,p2pid,resolvedWinner,score,surface||'hard',resolvedType,played_at||new Date().toISOString(),venue||null]);
   const fresh = await getLeagueData(lid, uid);
-  res.render('league_detail',{user,uid,...fresh,joinErr:null,error:null,success:'Match logged!'});
+  let _ap = [], _cp = {incoming:[],outgoing:[],accepted:[],all:[]};
+  try { _ap = await all(`SELECT lp.*,s.proposed_at as scheduled_at FROM league_proposals lp JOIN league_proposal_slots s ON lp.accepted_slot_id=s.id WHERE lp.league_id=? AND lp.status='accepted'`,[lid]); } catch(e){}
+  try { _cp = await getLeagueProposals(lid, uid); } catch(e){}
+  res.render('league_detail',{user,uid,...fresh,acceptedProposals:_ap,calProposals:_cp,joinErr:null,error:null,success:'Match logged!'});
 });
 
 // ── League Teams ──────────────────────────────────────────────────────────
@@ -1037,7 +1144,7 @@ app.post('/leagues/:id/teams', requireAuth, async (req,res) => {
   const p1 = parseInt(player1_id), p2 = parseInt(player2_id);
   if (!p1 || !p2 || p1 === p2) {
     const user = await get('SELECT * FROM users WHERE id=?', [uid]);
-    return res.render('league_detail', {user, uid, ...data, joinErr:null, error:'Select two different players to form a team.', success:null});
+    return res.render('league_detail', {user, uid, ...data, acceptedProposals:[], calProposals:{incoming:[],outgoing:[],accepted:[],all:[]}, joinErr:null, error:'Select two different players to form a team.', success:null});
   }
   await run('INSERT INTO league_teams (league_id,name,color,player1_id,player2_id,created_by) VALUES (?,?,?,?,?,?)',
     [lid, (name||'').trim()||'Team', color||'#1d4ed8', p1, p2, uid]);
@@ -1313,7 +1420,7 @@ app.post('/leagues/:id/bulk-upload', requireAuth, async (req,res) => {
       const fullName = name || username;
       const tempPassword = crypto.randomBytes(5).toString('hex'); // 10-char readable password
       const hash = await bcrypt.hash(tempPassword, 10);
-      const nr = await run('INSERT INTO users (username,email,password,full_name) VALUES (?,?,?,?)',
+      const nr = await run('INSERT INTO users (username,email,password,full_name,email_verified) VALUES (?,?,?,?,1)',
         [username, email, hash, fullName]);
       player = { id: nr.lastID, username, full_name: fullName, email };
       const loginUrl = `${req.protocol}://${req.get('host')}/login`;
